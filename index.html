@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freezigo IoT Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#f5f6f8;--card:#fff;--ink:#1d2330;--mute:#6b7383;--line:#e3e6ec;--ok:#1f9d55;--bad:#d64545;--acc:#2563eb}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header small{color:var(--mute)}
+  .flex1{flex:1}
+  button,select,input{font:inherit}
+  button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+  button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  button.danger{color:var(--bad)}
+  main{padding:20px;max-width:1300px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 12px;font-weight:600}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
+  th{color:var(--mute);font-weight:500;font-size:12px}
+  tbody tr.click{cursor:pointer}
+  tbody tr.click:hover{background:#f0f4ff}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+  .chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;margin:1px 2px;background:#fdecec;color:var(--bad)}
+  .chip.ok{background:#e7f6ee;color:var(--ok)}
+  .chip.n{background:#eef1f6;color:var(--ink)}
+  .mute{color:var(--mute)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:900px){.grid{grid-template-columns:1fr}}
+  .chartbox{position:relative;height:300px}
+  .chartbox.tall{height:340px}
+  #login{max-width:380px;margin:80px auto}
+  #login input,.form input[type=text],.form input[type=email],.form input[type=password]{width:100%;padding:9px;border:1px solid var(--line);border-radius:6px;margin-bottom:10px}
+  .err{color:var(--bad);margin-top:8px;min-height:18px}
+  .okmsg{color:var(--ok);margin-top:8px;min-height:18px}
+  .scroll{overflow-x:auto}
+  .kv td:first-child{color:var(--mute)}
+  .hidden{display:none !important}
+  .form label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}
+  .form .note{font-size:12px;color:var(--mute);margin:-6px 0 10px}
+  .checks label{display:inline-flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;margin:0 14px 8px 0}
+  .tabs button{border:none;background:none;padding:6px 10px;border-bottom:2px solid transparent;border-radius:0}
+  .tabs button.on{color:var(--ink);background:none;border-bottom-color:var(--acc);font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <h1>Freezigo IoT</h1>
+  <div class="tabs hidden" id="tabs">
+    <button id="tabMachines" class="on">Machines</button>
+    <button id="tabAccess" class="hidden">Access (admin)</button>
+  </div>
+  <span id="crumb" class="mute"></span>
+  <span class="flex1"></span>
+  <small id="who"></small>
+  <button id="logoutBtn" class="hidden">Log out</button>
+</header>
+
+<!-- LOGIN -->
+<div id="login" class="card hidden">
+  <h2>Log in</h2>
+  <p class="mute" style="margin-top:0">Staff: Google (@freezigo.in) or your ERP login. Customers: Google, or the email and password Freezigo gave you.</p>
+  <input id="email" type="email" placeholder="Email" autocomplete="username">
+  <input id="pass" type="password" placeholder="Password" autocomplete="current-password">
+  <button id="googleBtn" style="width:100%;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px">
+    <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+    Continue with Google</button>
+  <div class="mute" style="text-align:center;margin-bottom:10px;font-size:12px">or with email and password</div>
+  <button id="loginBtn" class="primary" style="width:100%">Log in</button>
+  <div id="loginErr" class="err"></div>
+</div>
+
+<main id="app" class="hidden">
+  <!-- MACHINE LIST -->
+  <section id="listView">
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <h2 style="margin:0">Machines</h2><span class="flex1"></span>
+        <span class="mute" id="listUpdated"></span>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+      <div class="scroll"><table><thead id="machineHead"></thead><tbody id="machineRows"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- MACHINE DETAIL -->
+  <section id="detailView" class="hidden">
+    <div class="card">
+      <div class="row">
+        <button id="backBtn">← All machines</button>
+        <strong id="dTitle"></strong>
+        <span id="dStatus"></span>
+        <span class="flex1"></span>
+        <span class="mute">Range</span>
+        <button class="rng" data-h="6">6 h</button>
+        <button class="rng" data-h="24">24 h</button>
+        <button class="rng" data-h="168">7 days</button>
+        <input id="fromIn" type="datetime-local"> <span class="mute">to</span> <input id="toIn" type="datetime-local">
+        <button id="customBtn">Show</button>
+      </div>
+      <div class="mute" id="dInfo" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card sec-temps"><h2>Temperatures (°C)</h2><div class="chartbox tall"><canvas id="cTemp"></canvas></div></div>
+    <div class="grid">
+      <div class="card sec-power"><h2>DC voltage (V)</h2><div class="chartbox"><canvas id="cDc"></canvas></div></div>
+      <div class="card sec-io"><h2>Digital inputs (share of time ON)</h2><div class="chartbox"><canvas id="cDi"></canvas></div></div>
+    </div>
+    <div class="card sec-io"><h2>Relays (share of time ON)</h2><div class="chartbox tall"><canvas id="cRelay"></canvas></div></div>
+    <div class="grid">
+      <div class="card"><h2>Latest values</h2><div class="scroll"><table class="kv" id="setTable"></table></div></div>
+      <div class="card sec-events"><h2>Alarm and settings history</h2>
+        <div class="scroll" style="max-height:340px;overflow-y:auto"><table>
+          <thead id="evHead"></thead><tbody id="evRows"></tbody>
+        </table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACCESS (ADMIN) -->
+  <section id="accessView" class="hidden">
+    <div class="grid">
+      <div class="card">
+        <div class="row" style="margin-bottom:10px"><h2 style="margin:0">People</h2><span class="flex1"></span><button id="newPersonBtn" class="primary">+ Add person</button></div>
+        <div class="scroll"><table>
+          <thead><tr><th>Email</th><th>Name</th><th>Machines</th><th>Sections</th><th>Admin</th><th>Active</th></tr></thead>
+          <tbody id="peopleRows"></tbody>
+        </table></div>
+      </div>
+
+      <div class="card form" id="personForm">
+        <h2 id="pfTitle">Add person</h2>
+        <label>Email (this is the username)</label>
+        <input id="pfEmail" type="email" placeholder="e.g. prompt.ops@gmail.com">
+        <label>Name</label>
+        <input id="pfName" type="text" placeholder="e.g. Arshad (Prompt)">
+        <label>Password</label>
+        <input id="pfPass" type="password" placeholder="min 8 characters" autocomplete="new-password">
+        <div class="note">
+          Person with Google (Gmail or @freezigo.in): leave empty. They click "Continue with Google".<br>
+          Customer without Google: type a password, e.g. <b>Cool@2026</b>, and give it to them.<br>
+          Staff with an ERP login: leave empty. Their ERP password also works.<br>
+          To reset a customer's password: type the new one here and Save.
+        </div>
+        <label>Machines this person can see</label>
+        <div class="checks"><label><input type="checkbox" id="pfAll"> All machines (also new ones added later)</label></div>
+        <div class="checks" id="pfMachines"></div>
+        <label>Sections this person can see</label>
+        <div class="checks" id="pfSections"></div>
+        <label>Rights</label>
+        <div class="checks">
+          <label><input type="checkbox" id="pfAdmin"> Admin (can open this Access page)</label>
+          <label><input type="checkbox" id="pfActive" checked> Active (untick to block)</label>
+        </div>
+        <div class="row"><button id="pfSave" class="primary">Save</button><button id="pfDelete" class="danger hidden">Remove access</button></div>
+        <div id="pfMsg" class="err"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Machine names</h2>
+      <p class="mute" style="margin-top:0">Give each controller a name and machine serial number, e.g. Label "Prompt van 1", Serial "FZ-RF-0012". These show in the machine list.</p>
+      <div class="scroll"><table>
+        <thead><tr><th>IMEI</th><th>Label</th><th>Serial no.</th><th>Last seen</th><th></th></tr></thead>
+        <tbody id="deviceRows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <p class="mute" style="text-align:center;font-size:12px">Build B003 · Freezigo IoT Dashboard</p>
+</main>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+// ---- Config ----
+const ERP_URL = 'https://prsdbdxxxllepcdfbtcb.supabase.co';          // login = ERP Supabase login
+const ERP_KEY = 'sb_publishable_ECHJuSFgQG0NG60sYTEeCA_ImpwH2sR';    // publishable key, safe in a browser
+const IOT_API = 'https://yjzrhvigflxkmqaydcsf.supabase.co/functions/v1/iot-api';
+const ONLINE_SECONDS = 180;
+const LIST_REFRESH_MS = 30000;
+const COLORS = ['#2563eb','#d64545','#1f9d55','#d98a00','#7c3aed','#0891b2','#be185d','#65a30d','#475569'];
+const SECTIONS = [
+  ['temps','Temperatures (temp1–temp5)'],
+  ['power','DC voltage (dc1, dc2)'],
+  ['io','Inputs and relays (di, r)'],
+  ['settings','Settings (sp, dp, hys, dcv, tm, scenario)'],
+  ['alarms','Alarms'],
+];
+
+const sb = createClient(ERP_URL, ERP_KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true } });
+const $ = id => document.getElementById(id);
+const charts = {};
+let listTimer = null, current = null, ME = null, machinesCache = [], accessCache = null, editing = null;
+
+// ---- Helpers ----
+const fmtT = d => new Date(d).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+const fmtTs = d => new Date(d).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+const num = v => (v===null||v===undefined) ? '–' : Number(v).toFixed(1);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const has = s => ME?.sections?.includes(s);
+function ago(d){
+  if (!d) return '–';
+  const s = Math.max(0, (Date.now() - new Date(d))/1000);
+  if (s < 90) return Math.round(s)+' s ago';
+  if (s < 5400) return Math.round(s/60)+' min ago';
+  if (s < 172800) return Math.round(s/3600)+' h ago';
+  return Math.round(s/86400)+' days ago';
+}
+const isOnline = r => (Date.now() - new Date(r.received_at))/1000 < ONLINE_SECONDS;
+const statusHtml = r => isOnline(r)
+  ? '<span class="dot" style="background:var(--ok)"></span>Online'
+  : '<span class="dot" style="background:var(--bad)"></span>Offline';
+const alarmHtml = a => (a && a.length) ? a.map(x=>`<span class="chip">${esc(x)}</span>`).join('') : '<span class="chip ok">none</span>';
+const toLocalInput = d => { const x = new Date(d); x.setMinutes(x.getMinutes()-x.getTimezoneOffset()); return x.toISOString().slice(0,16); };
+const machineName = r => [r.label, r.serial_no].filter(Boolean).join(' · ');
+
+async function api(op, args = {}){
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) throw Object.assign(new Error('Log in first.'), { status:401 });
+  const r = await fetch(IOT_API, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token }, body: JSON.stringify({ op, ...args }) });
+  const j = await r.json().catch(()=>({ ok:false, error:'Server did not answer.' }));
+  if (!r.ok || !j.ok) throw Object.assign(new Error(j.error || ('Error '+r.status)), { status:r.status });
+  return j;
+}
+
+// ---- Auth ----
+let starting = false;
+async function start(){
+  if (starting) return; starting = true;
+  try { await startInner(); } finally { starting = false; }
+}
+async function startInner(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if (!session) return showLogin('');
+  try { ME = (await api('me')).me; }
+  catch(e){ return showLogin(e.message, session.user.email); }
+  $('who').textContent = ME.name ? `${ME.name} (${ME.email})` : ME.email;
+  $('logoutBtn').classList.remove('hidden');
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('tabs').classList.remove('hidden');
+  $('tabAccess').classList.toggle('hidden', !ME.is_admin);
+  // hide sections the person may not see
+  document.querySelectorAll('.sec-temps').forEach(el=>el.classList.toggle('hidden', !has('temps')));
+  document.querySelectorAll('.sec-power').forEach(el=>el.classList.toggle('hidden', !has('power')));
+  document.querySelectorAll('.sec-io').forEach(el=>el.classList.toggle('hidden', !has('io')));
+  document.querySelectorAll('.sec-events').forEach(el=>el.classList.toggle('hidden', !has('alarms') && !has('settings')));
+  const imei = new URLSearchParams(location.search).get('imei');
+  imei ? openMachine(imei) : showList();
+}
+function showLogin(msg, email){
+  $('login').classList.remove('hidden'); $('app').classList.add('hidden'); $('tabs').classList.add('hidden');
+  $('loginErr').textContent = msg || '';
+  $('who').textContent = email || ''; $('logoutBtn').classList.toggle('hidden', !email);
+}
+$('loginBtn').onclick = async () => {
+  $('loginErr').textContent = '';
+  const { error } = await sb.auth.signInWithPassword({ email: $('email').value.trim(), password: $('pass').value });
+  if (error) { $('loginErr').textContent = error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message; return; }
+  start();
+};
+$('googleBtn').onclick = async () => {
+  if (location.protocol === 'file:') { $('loginErr').textContent = 'Google login works only on the hosted page, not a file on your computer.'; return; }
+  const { error } = await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin + location.pathname + location.search } });
+  if (error) $('loginErr').textContent = error.message;
+};
+$('pass').addEventListener('keydown', e => { if (e.key==='Enter') $('loginBtn').click(); });
+$('logoutBtn').onclick = async () => { clearInterval(listTimer); await sb.auth.signOut(); ME = null; showLogin(''); };
+
+// ---- Tabs ----
+function showTab(name){
+  $('tabMachines').classList.toggle('on', name==='machines');
+  $('tabAccess').classList.toggle('on', name==='access');
+  $('accessView').classList.toggle('hidden', name!=='access');
+  if (name==='access'){ clearInterval(listTimer); $('listView').classList.add('hidden'); $('detailView').classList.add('hidden'); $('crumb').textContent=''; loadAccess(); }
+}
+$('tabMachines').onclick = () => { showTab('machines'); showList(); };
+$('tabAccess').onclick = () => showTab('access');
+
+// ---- Machine list ----
+function listHead(){
+  const c = ['Status','IMEI','Name','Last seen'];
+  if (has('temps')) c.push('temp1','temp2','temp3','temp4','temp5');
+  if (has('power')) c.push('dc1','dc2');
+  if (has('settings')) c.push('Scenario');
+  if (has('alarms')) c.push('Alarms');
+  return c;
+}
+async function loadList(){
+  const head = listHead();
+  $('machineHead').innerHTML = '<tr>' + head.map(h=>`<th>${h}</th>`).join('') + '</tr>';
+  const tb = $('machineRows');
+  try { machinesCache = (await api('machines')).rows; }
+  catch(e){ tb.innerHTML = `<tr><td colspan="${head.length}" class="err">${esc(e.message)}</td></tr>`; return; }
+  if (!machinesCache.length){ tb.innerHTML = `<tr><td colspan="${head.length}" class="mute">No machines for this login yet.</td></tr>`; return; }
+  tb.innerHTML = machinesCache.map(r => {
+    let t = `<td>${statusHtml(r)}</td><td>${esc(r.imei)}</td><td>${esc(machineName(r))||'<span class="mute">–</span>'}</td><td title="${fmtTs(r.received_at)}">${ago(r.received_at)}</td>`;
+    if (has('temps')) t += [1,2,3,4,5].map(n=>`<td>${num(r['temp'+n])}</td>`).join('');
+    if (has('power')) t += `<td>${num(r.dc1)}</td><td>${num(r.dc2)}</td>`;
+    if (has('settings')) t += `<td>${esc(r.scenario)}</td>`;
+    if (has('alarms')) t += `<td>${alarmHtml(r.alarms)}</td>`;
+    return `<tr class="click" data-imei="${esc(r.imei)}">${t}</tr>`;
+  }).join('');
+  tb.querySelectorAll('tr.click').forEach(tr => tr.onclick = () => openMachine(tr.dataset.imei));
+  $('listUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
+}
+function showList(){
+  current = null;
+  history.replaceState(null,'',location.pathname);
+  $('accessView').classList.add('hidden'); $('detailView').classList.add('hidden'); $('listView').classList.remove('hidden'); $('crumb').textContent='';
+  loadList(); clearInterval(listTimer); listTimer = setInterval(loadList, LIST_REFRESH_MS);
+}
+$('refreshBtn').onclick = loadList;
+$('backBtn').onclick = showList;
+
+// ---- Machine detail ----
+async function openMachine(imei){
+  clearInterval(listTimer);
+  current = { imei };
+  history.replaceState(null,'','?imei='+encodeURIComponent(imei));
+  $('accessView').classList.add('hidden'); $('listView').classList.add('hidden'); $('detailView').classList.remove('hidden');
+  $('tabMachines').classList.add('on'); $('tabAccess').classList.remove('on');
+  $('crumb').textContent = '/ ' + imei;
+  if (!machinesCache.find(m=>m.imei===imei)) { try { machinesCache = (await api('machines')).rows; } catch(e){} }
+  const r = machinesCache.find(m=>m.imei===imei);
+  current.latest = r;
+  $('dTitle').textContent = imei + (r && machineName(r) ? ' · ' + machineName(r) : '');
+  $('dStatus').innerHTML = r ? statusHtml(r) + ` <span class="mute">· last message ${ago(r.received_at)}</span>` : '<span class="err">no access or no data</span>';
+  renderLatest(r);
+  setRange(24);
+}
+function setRange(hours){
+  const to = new Date(), from = new Date(to - hours*3600e3);
+  document.querySelectorAll('.rng').forEach(b => b.classList.toggle('on', Number(b.dataset.h)===hours));
+  $('fromIn').value = toLocalInput(from); $('toIn').value = toLocalInput(to);
+  loadDetail(from, to);
+}
+document.querySelectorAll('.rng').forEach(b => b.onclick = () => setRange(Number(b.dataset.h)));
+$('customBtn').onclick = () => {
+  const from = new Date($('fromIn').value), to = new Date($('toIn').value);
+  if (isNaN(from) || isNaN(to) || from >= to) { $('dInfo').textContent = 'Pick a valid From and To time (From must be earlier).'; return; }
+  if (to - from > 31*86400e3) { $('dInfo').textContent = 'Pick at most 31 days.'; return; }
+  document.querySelectorAll('.rng').forEach(b => b.classList.remove('on'));
+  loadDetail(from, to);
+};
+function bucketFor(from, to){
+  const secs = (to - from)/1000;
+  const steps = [30,60,120,300,600,900,1800,3600,7200,21600];
+  return steps.find(s => secs/s <= 500) || 86400;
+}
+async function loadDetail(from, to){
+  const bucket = bucketFor(from, to);
+  $('dInfo').textContent = `${fmtT(from)} to ${fmtT(to)} · each point = average of ${bucket>=60 ? bucket/60+' min' : bucket+' s'}`;
+  const args = { imei: current.imei, from: from.toISOString(), to: to.toISOString() };
+  let rows = [], ev = [];
+  try {
+    const [s, e] = await Promise.all([ api('series', { ...args, bucket }), api('events', args) ]);
+    rows = s.rows; ev = e.rows;
+  } catch(e){ $('dInfo').textContent = 'Error: ' + e.message; return; }
+  const xs = rows.map(r => new Date(r.bucket).getTime());
+  const pts = (fn) => rows.map((r,j)=>({ x:xs[j], y:fn(r) }));
+  const ds = (label, i, data, extra={}) => ({ label, data, borderColor:COLORS[i%COLORS.length], backgroundColor:COLORS[i%COLORS.length], pointRadius:0, borderWidth:1.6, spanGaps: bucket*2000, ...extra });
+
+  if (has('temps')) drawChart('cTemp', [1,2,3,4,5].map((n,i)=>ds('temp'+n, i, pts(r=>r['temp'+n]))), from, to, { y:{ title:{display:true,text:'°C'} } });
+  if (has('power')) drawChart('cDc', [ds('dc1',0,pts(r=>r.dc1)), ds('dc2',1,pts(r=>r.dc2))], from, to, { y:{ title:{display:true,text:'V'} } });
+  if (has('io')){
+    drawChart('cDi', [1,2,3,4,5].map((n,i)=>ds('di'+n, i, pts(r=>r['di'+n]==null?null:r['di'+n]*100), {stepped:true})), from, to, { y:{ min:0, max:100, ticks:{ callback:v=>v+'%' } } });
+    const relay = [1,2,3,4,5,6,7,8,9].map((n,i)=>ds('r'+n, i, pts(r=>r['r'+n]==null?null: i + r['r'+n]*0.8), {stepped:true, fill:{value:i}, backgroundColor: COLORS[i%COLORS.length]+'55'}));
+    drawChart('cRelay', relay, from, to, { y:{ min:0, max:9, ticks:{ stepSize:1, callback:v => v<9 ? 'r'+(v+1) : '' } } },
+      c => `${c.dataset.label}: ${Math.round((c.parsed.y - c.datasetIndex)/0.8*100)}% ON`);
+  }
+  // events table
+  const cols = ['Time','Change'];
+  if (has('alarms')) cols.push('Alarms');
+  if (has('settings')) cols.push('Scenario','sp');
+  $('evHead').innerHTML = '<tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr>';
+  $('evRows').innerHTML = ev.length ? ev.map(e => {
+    let t = `<td>${fmtTs(e.ts)}</td><td>${esc(e.kind)}</td>`;
+    if (has('alarms')) t += `<td>${alarmHtml(e.alarms)}</td>`;
+    if (has('settings')) t += `<td>${esc(e.scenario)}</td><td>${esc((e.sp||[]).join(', '))}</td>`;
+    return `<tr>${t}</tr>`;
+  }).join('') : `<tr><td colspan="${cols.length}" class="mute">No data in this range.</td></tr>`;
+  if (!rows.length) $('dInfo').textContent += ' · no data in this range';
+}
+function drawChart(id, datasets, from, to, scales={}, labelFn=null){
+  if (charts[id]) charts[id].destroy();
+  const span = to - from;
+  const callbacks = { title: items => items.length ? fmtTs(items[0].parsed.x) : '' };
+  if (labelFn) callbacks.label = labelFn;
+  charts[id] = new Chart($(id), {
+    type:'line', data:{ datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
+      interaction:{ mode:'nearest', axis:'x', intersect:false },
+      scales:{
+        x:{ type:'linear', min:from.getTime(), max:to.getTime(),
+            ticks:{ maxTicksLimit:8, callback: v => new Date(v).toLocaleString('en-GB', span > 2*86400e3 ? {day:'2-digit',month:'short'} : {hour:'2-digit',minute:'2-digit'}) } },
+        ...scales
+      },
+      plugins:{ legend:{ labels:{ boxWidth:12 } }, tooltip:{ callbacks } }
+    }
+  });
+}
+function renderLatest(r){
+  const t = $('setTable');
+  if (!r){ t.innerHTML = '<tr><td class="mute">No data.</td></tr>'; return; }
+  const arr = a => (a && a.length) ? a.map((v,i)=>`<span class="mute">${i+1}:</span> ${v}`).join(' &nbsp; ') : '–';
+  let h = `<tr><td>As of</td><td>${fmtTs(r.ts)}</td></tr>`;
+  if (has('temps')) h += `<tr><td>temp1–temp5</td><td>${[1,2,3,4,5].map(n=>num(r['temp'+n])).join(' · ')} °C</td></tr>`;
+  if (has('power')) h += `<tr><td>dc1 / dc2</td><td>${num(r.dc1)} / ${num(r.dc2)} V</td></tr>`;
+  if (has('settings')) h += `
+    <tr><td>Scenario / code</td><td>${esc(r.scenario)} / ${esc(r.code)}</td></tr>
+    <tr><td>sp (setpoints)</td><td>${arr(r.sp)}</td></tr>
+    <tr><td>dp</td><td>${arr(r.dp)}</td></tr>
+    <tr><td>hys (hysteresis)</td><td>${arr(r.hys)}</td></tr>
+    <tr><td>dcv</td><td>${arr(r.dcv)}</td></tr>
+    <tr><td>tm (timers)</td><td>${arr(r.tm)}</td></tr>`;
+  if (has('io')) h += `
+    <tr><td>Inputs di1–di5</td><td>${[1,2,3,4,5].map(n=>r['di'+n]?'<b>ON</b>':'off').join(' · ')}</td></tr>
+    <tr><td>Relays r1–r9</td><td>${[1,2,3,4,5,6,7,8,9].map(n=>r['r'+n]?'<b>ON</b>':'off').join(' · ')}</td></tr>`;
+  if (has('alarms')) h += `<tr><td>Alarms</td><td>${alarmHtml(r.alarms)}</td></tr>`;
+  t.innerHTML = h;
+}
+
+// ---- Access (admin) ----
+async function loadAccess(){
+  try { accessCache = await api('access_list'); }
+  catch(e){ $('peopleRows').innerHTML = `<tr><td colspan="6" class="err">${esc(e.message)}</td></tr>`; return; }
+  const devName = imei => { const d = accessCache.devices.find(x=>x.imei===imei); return d ? (machineName(d) || imei) : imei; };
+  $('peopleRows').innerHTML = accessCache.people.map(p => `<tr class="click" data-email="${esc(p.email)}">
+    <td>${esc(p.email)}</td><td>${esc(p.name)}</td>
+    <td>${p.all_machines ? '<span class="chip n">All</span>' : (p.imeis.length ? p.imeis.map(i=>`<span class="chip n">${esc(devName(i))}</span>`).join('') : '<span class="mute">none</span>')}</td>
+    <td>${p.sections.length ? p.sections.map(s=>`<span class="chip n">${esc(s)}</span>`).join('') : '<span class="mute">none</span>'}</td>
+    <td>${p.is_admin ? 'Yes' : ''}</td><td>${p.active ? 'Yes' : '<span class="err">Blocked</span>'}</td></tr>`).join('');
+  $('peopleRows').querySelectorAll('tr.click').forEach(tr => tr.onclick = () => editPerson(accessCache.people.find(p=>p.email===tr.dataset.email)));
+  $('deviceRows').innerHTML = accessCache.devices.map(d => `<tr data-imei="${esc(d.imei)}">
+    <td>${esc(d.imei)}</td><td><input type="text" class="dLabel" value="${esc(d.label)}" placeholder="e.g. Prompt van 1"></td>
+    <td><input type="text" class="dSerial" value="${esc(d.serial_no)}" placeholder="e.g. FZ-RF-0012"></td>
+    <td>${ago(d.last_seen)}</td><td><button class="dSave">Save</button> <span class="dMsg mute"></span></td></tr>`).join('');
+  $('deviceRows').querySelectorAll('tr').forEach(tr => tr.querySelector('.dSave').onclick = async () => {
+    const msg = tr.querySelector('.dMsg');
+    try { await api('device_save', { imei: tr.dataset.imei, label: tr.querySelector('.dLabel').value, serial_no: tr.querySelector('.dSerial').value }); msg.textContent='Saved'; machinesCache=[]; }
+    catch(e){ msg.textContent = e.message; }
+  });
+  editPerson(null);
+}
+function editPerson(p){
+  editing = p;
+  $('pfTitle').textContent = p ? 'Edit ' + p.email : 'Add person';
+  $('pfEmail').value = p?.email || ''; $('pfEmail').disabled = !!p;
+  $('pfName').value = p?.name || ''; $('pfPass').value = '';
+  $('pfAll').checked = !!p?.all_machines;
+  $('pfAdmin').checked = !!p?.is_admin; $('pfActive').checked = p ? p.active : true;
+  $('pfMachines').innerHTML = (accessCache?.devices||[]).map(d => `<label><input type="checkbox" value="${esc(d.imei)}" ${p?.imeis?.includes(d.imei)?'checked':''}> ${esc(machineName(d) || d.imei)} <span class="mute">(${esc(d.imei.slice(-3))})</span></label>`).join('') || '<span class="mute">No machines yet.</span>';
+  $('pfSections').innerHTML = SECTIONS.map(([k,l]) => `<label><input type="checkbox" value="${k}" ${(p ? p.sections.includes(k) : k==='temps' || k==='alarms') ? 'checked':''}> ${l}</label>`).join('');
+  $('pfDelete').classList.toggle('hidden', !p);
+  $('pfMsg').className = 'err'; $('pfMsg').textContent = '';
+  toggleMachineBoxes();
+}
+function toggleMachineBoxes(){ $('pfMachines').querySelectorAll('input').forEach(i => i.disabled = $('pfAll').checked); }
+$('pfAll').onchange = toggleMachineBoxes;
+$('newPersonBtn').onclick = () => editPerson(null);
+$('pfSave').onclick = async () => {
+  const person = {
+    email: $('pfEmail').value.trim().toLowerCase(), name: $('pfName').value.trim(), password: $('pfPass').value,
+    is_new: !editing, all_machines: $('pfAll').checked,
+    imeis: [...$('pfMachines').querySelectorAll('input:checked')].map(i=>i.value),
+    sections: [...$('pfSections').querySelectorAll('input:checked')].map(i=>i.value),
+    is_admin: $('pfAdmin').checked, active: $('pfActive').checked,
+  };
+  $('pfMsg').className='err'; $('pfMsg').textContent = 'Saving…';
+  try {
+    const r = await api('access_save', { person });
+    const loginText = { created:'New login created.', password_set:'Password changed.', staff_existing:'Uses their existing ERP login (password not changed).', existing:'Login already existed.', unchanged:'', none:'No password set: they log in with Google using this email.' }[r.login] || '';
+    await loadAccess();
+    $('pfMsg').className='okmsg'; $('pfMsg').textContent = 'Saved. ' + loginText;
+  } catch(e){ $('pfMsg').textContent = e.message; }
+};
+$('pfDelete').onclick = async () => {
+  if (!editing) return;
+  if (!confirm('Remove IoT access for ' + editing.email + '? Their login stays, but they will see no IoT data.')) return;
+  try { await api('access_delete', { email: editing.email }); await loadAccess(); }
+  catch(e){ $('pfMsg').textContent = e.message; }
+};
+
+sb.auth.onAuthStateChange((evt) => {
+  if (evt === 'SIGNED_OUT') showLogin('');
+  if (evt === 'SIGNED_IN' && !ME) setTimeout(start, 0);   // back from Google
+});
+start();
+</script>
+</body>
+</html>
