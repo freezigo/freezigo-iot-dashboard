@@ -54,7 +54,7 @@
   .pick .sw{display:inline-block;width:10px;height:10px;border-radius:2px}
   .chartwrap{position:relative;height:480px}
   .tg{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--ink)}
-  .tg.on{background:#fde2e2;border-color:#e8a0a0}
+  .tg.on,.tg.on:hover{background:#fde2e2;border-color:#e8a0a0;color:var(--ink)}
   .tg.all{font-weight:600;color:var(--mute)}
   .hoverbox .grid5{display:grid;grid-template-columns:repeat(5,auto);gap:0 12px;margin:6px 0}
   .hoverbox .grid5 span{opacity:.7;font-size:11px}
@@ -518,7 +518,7 @@ function drawMain(){
   if (!G) return;
   const { from, to, bucket, series } = G;
   const xs = series.map(r => new Date(r.bucket).getTime());
-  const gap = bucket * 1500;
+  const gap = Math.max(bucket * 2000, 200e3);   // lines break only at real gaps (> ~3 min), which also get a grey band
   const ds = [];
   if (has('temps')) [1,2,3,4,5].forEach(n => { if (SEL['temp'+n]) ds.push({ label:'temp'+n, yAxisID:'y', data: series.map((r,j)=>({x:xs[j], y:r['temp'+n]})), borderColor:TEMP_COL[n-1], backgroundColor:TEMP_COL[n-1], pointRadius:0, borderWidth:1.8, spanGaps:gap }); });
   if (has('power')) [1,2].forEach(n => { if (SEL['dc'+n]) ds.push({ label:'dc'+n, yAxisID:'yv', data: series.map((r,j)=>({x:xs[j], y:r['dc'+n]})), borderColor:DC_COL[n-1], backgroundColor:DC_COL[n-1], borderDash:[5,3], pointRadius:0, borderWidth:1.6, spanGaps:gap }); });
