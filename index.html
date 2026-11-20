@@ -53,7 +53,15 @@
   .pick select{font-size:12px;padding:0 2px;border:1px solid var(--line);border-radius:4px}
   .pick .sw{display:inline-block;width:10px;height:10px;border-radius:2px}
   .chartwrap{position:relative;height:480px}
-  .hoverbox{position:absolute;pointer-events:none;background:rgba(29,35,48,.94);color:#fff;font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;min-width:180px;max-width:300px;z-index:5;white-space:normal}
+  .tg{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--ink)}
+  .tg.on{background:#fde2e2;border-color:#e8a0a0}
+  .tg.all{font-weight:600;color:var(--mute)}
+  .hoverbox .grid5{display:grid;grid-template-columns:repeat(5,auto);gap:0 12px;margin:6px 0}
+  .hoverbox .grid5 span{opacity:.7;font-size:11px}
+  .hoverbox .boxes{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+  .hoverbox .bx{border-radius:5px;padding:1px 6px;font-size:11px;background:#3a4252;color:#aab1bf}
+  .hoverbox .bx.on{background:#f3b7b7;color:#5a0d0d;font-weight:600}
+  .hoverbox{position:absolute;pointer-events:none;background:rgba(29,35,48,.95);color:#fff;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;min-width:250px;max-width:340px;z-index:5;white-space:normal}
   .hoverbox .h{font-weight:600;margin-bottom:4px}
   .hoverbox .on{color:#ff8a8a;font-weight:600}
   .tabs button{border:none;background:none;padding:6px 10px;border-bottom:2px solid transparent;border-radius:0}
@@ -120,11 +128,11 @@
 
     <div class="card">
       <div class="row" style="margin-bottom:6px"><h2 style="margin:0">Graph</h2><span class="flex1"></span>
-        <label class="mute" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="optHover"> Show details on hover</label>
+        <button class="tg" id="optHover">Details on hover</button>
       </div>
       <div id="pick" class="pick"></div>
       <div class="chartwrap"><canvas id="cMain"></canvas><div id="hoverBox" class="hoverbox hidden"></div></div>
-      <div class="mute" style="font-size:12px;margin-top:6px">Rows at the top: a <b style="color:var(--bad)">red</b> dot or line shows when that input or relay is in the state you picked (ON or OFF). A grey line means data exists but it is in the other state. No line means no data (unit off or offline).</div>
+      <div class="mute" style="font-size:12px;margin-top:6px">Rows at the top: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
     </div>
     <div class="grid">
       <div class="card"><h2>Latest values</h2><div class="scroll"><table class="kv" id="setTable"></table></div></div>
@@ -186,7 +194,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B004 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B005 · Freezigo IoT Dashboard</p>
 </main>
 
 <script type="module">
@@ -381,21 +389,26 @@ function saveSel(){ try { localStorage.setItem('iot_sel', JSON.stringify(SEL)); 
 const whenOn = k => (WHEN[k] || 'ON') === 'ON';   // true = red when ON
 
 function buildPicker(){
-  const cb = (k, label, colour) => `<label><input type="checkbox" data-k="${k}" ${SEL[k]?'checked':''}>${colour?`<span class="sw" style="background:${colour}"></span>`:''}${label}</label>`;
-  const onoff = k => `<select data-w="${k}" title="Red when"><option ${whenOn(k)?'selected':''}>ON</option><option ${!whenOn(k)?'selected':''}>OFF</option></select>`;
+  const tg = (k, label, colour) => `<button class="tg ${SEL[k]?'on':''}" data-k="${k}">${colour?`<span class="sw" style="background:${colour}"></span> `:''}${label}</button>`;
+  const grp = (title, keys, inner) => `<div class="grp"><button class="tg all" data-g="${keys.join(',')}" title="Select or clear all">${title}</button>${inner}</div>`;
   let h = '';
-  if (has('temps')) h += `<div class="grp"><b>Temperature</b>${[1,2,3,4,5].map(n=>cb('temp'+n,'temp'+n,TEMP_COL[n-1])).join('')}</div>`;
-  if (has('power')) h += `<div class="grp"><b>DC voltage</b>${cb('dc1','dc1',DC_COL[0])}${cb('dc2','dc2',DC_COL[1])}</div>`;
+  const T = [1,2,3,4,5].map(n=>'temp'+n), V = ['dc1','dc2'], D = [1,2,3,4,5].map(n=>'di'+n), R = [1,2,3,4,5,6,7,8,9].map(n=>'r'+n);
+  if (has('temps')) h += grp('Temperatures', T, T.map((k,i)=>tg(k,'T'+(i+1),TEMP_COL[i])).join(''));
+  if (has('power')) h += grp('DC voltage', V, tg('dc1','DC1',DC_COL[0]) + tg('dc2','DC2',DC_COL[1]));
   if (has('io')) {
-    h += `<div class="grp"><b>Digital inputs</b>${[1,2,3,4,5].map(n=>cb('di'+n,'DI'+n)+onoff('di'+n)).join('&nbsp;')}</div>`;
-    h += `<div class="grp"><b>Relays</b>${[1,2,3,4,5,6,7,8,9].map(n=>cb('r'+n,'R'+n)+onoff('r'+n)).join('&nbsp;')}</div>`;
+    h += grp('Digital inputs', D, D.map((k,i)=>tg(k,'DI'+(i+1))).join(''));
+    h += grp('Relays', R, R.map((k,i)=>tg(k,'R'+(i+1))).join(''));
   }
-  if (has('alarms') || has('settings')) h += `<div class="grp"><b>Events</b>${has('alarms')?cb('alarms','Alarms'):''}${has('settings')?cb('scenario','Scenario'):''}</div>`;
+  const E = [...(has('alarms')?['alarms']:[]), ...(has('settings')?['scenario']:[])];
+  if (E.length) h += grp('Events', E, (has('alarms')?tg('alarms','Alarms'):'') + (has('settings')?tg('scenario','Scenario'):''));
   $('pick').innerHTML = h;
-  $('pick').querySelectorAll('input[data-k]').forEach(i => i.onchange = () => { SEL[i.dataset.k] = i.checked ? 1 : 0; saveSel(); drawMain(); });
-  $('pick').querySelectorAll('select[data-w]').forEach(s => s.onchange = () => { WHEN[s.dataset.w] = s.value; saveSel(); drawMain(); });
-  $('optHover').checked = !!SEL.hover;
-  $('optHover').onchange = () => { SEL.hover = $('optHover').checked ? 1 : 0; saveSel(); if (!SEL.hover) $('hoverBox').classList.add('hidden'); };
+  $('pick').querySelectorAll('button[data-k]').forEach(btn => btn.onclick = () => { SEL[btn.dataset.k] = SEL[btn.dataset.k] ? 0 : 1; saveSel(); buildPicker(); drawMain(); });
+  $('pick').querySelectorAll('button[data-g]').forEach(btn => btn.onclick = () => {
+    const keys = btn.dataset.g.split(','); const val = keys.some(k => !SEL[k]) ? 1 : 0;
+    keys.forEach(k => SEL[k] = val); saveSel(); buildPicker(); drawMain();
+  });
+  $('optHover').classList.toggle('on', !!SEL.hover);
+  $('optHover').onclick = () => { SEL.hover = SEL.hover ? 0 : 1; saveSel(); $('optHover').classList.toggle('on', !!SEL.hover); if (!SEL.hover) $('hoverBox').classList.add('hidden'); };
 }
 
 async function loadDetail(from, to){
@@ -423,6 +436,15 @@ function toRuns(rows){
   }
   return runs;
 }
+function gapList(){
+  if (!G || !G.runs.length) return [];
+  const gaps = [], R = G.runs, from = G.from.getTime(), to = Math.min(G.to.getTime(), Date.now());
+  if (R[0].s - from > 180e3) gaps.push({ s: from, e: R[0].s });
+  for (let i = 1; i < R.length; i++) if (R[i].row.after_gap) gaps.push({ s: R[i-1].e, e: R[i].s });
+  const last = R[R.length-1]; if (to - last.e > 180e3) gaps.push({ s: last.e, e: to });
+  return gaps;
+}
+const inGap = t => gapList().some(g => t > g.s && t < g.e);
 function runAt(t){
   if (!G) return null;
   for (const r of G.runs) if (t >= r.s && t < r.e) return r;
@@ -435,8 +457,8 @@ function laneList(){
   if (has('settings') && SEL.scenario) L.push({ k:'scenario', label:'Scenario' });
   if (has('alarms') && SEL.alarms) L.push({ k:'alarms', label:'Alarms' });
   if (has('io')) {
-    [1,2,3,4,5].forEach(n => { if (SEL['di'+n]) L.push({ k:'di'+n, label:`DI${n} ${whenOn('di'+n)?'ON':'OFF'}` }); });
-    [1,2,3,4,5,6,7,8,9].forEach(n => { if (SEL['r'+n]) L.push({ k:'r'+n, label:`R${n} ${whenOn('r'+n)?'ON':'OFF'}` }); });
+    [1,2,3,4,5].forEach(n => { if (SEL['di'+n]) L.push({ k:'di'+n, label:'DI'+n }); });
+    [1,2,3,4,5,6,7,8,9].forEach(n => { if (SEL['r'+n]) L.push({ k:'r'+n, label:'R'+n }); });
   }
   return L;
 }
@@ -452,6 +474,13 @@ const lanePlugin = {
     const px = t => Math.max(a.left, Math.min(a.right, x.getPixelForValue(t)));
     ctx.save();
     ctx.font = '11px Inter, Segoe UI, Roboto, Arial, sans-serif'; ctx.textBaseline = 'middle'; ctx.lineCap = 'round';
+    // grey bands where no message was received
+    ctx.fillStyle = 'rgba(107,115,131,.12)';
+    for (const g of gapList()){
+      if (g.e < x.min || g.s > x.max) continue;
+      const g1 = px(g.s), g2 = px(g.e); if (g2 - g1 < 1) continue;
+      ctx.fillRect(g1, top0, g2 - g1, a.bottom - top0);
+    }
     lanes.forEach((ln, i) => {
       const y = top0 + i*LANE_H + LANE_H/2;
       ln.y = y;
@@ -462,14 +491,14 @@ const lanePlugin = {
         const x1 = px(r.s), x2 = Math.max(px(r.e) - 1, x1);
         if (ln.k === 'scenario'){
           const prev = G.runs[G.runs.indexOf(r)-1];
-          if (!prev || prev.row.scenario !== r.row.scenario || r.row.after_gap){
+          if (!prev || prev.row.scenario !== r.row.scenario){
             ctx.fillStyle = scnColour(r.row.scenario); ctx.beginPath(); ctx.arc(x1, y, 5, 0, Math.PI*2); ctx.fill();
           }
           continue;
         }
         let hit;
         if (ln.k === 'alarms') hit = (r.row.alarms||[]).length > 0;
-        else { const v = r.row[ln.k]; if (v === null || v === undefined) continue; hit = whenOn(ln.k) ? !!v : !v; }
+        else { const v = r.row[ln.k]; if (v === null || v === undefined) continue; hit = !!v; }
         ctx.strokeStyle = hit ? '#d64545' : '#c9ced8';
         ctx.lineWidth = hit ? 9 : 2;
         ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
@@ -489,7 +518,7 @@ function drawMain(){
   if (!G) return;
   const { from, to, bucket, series } = G;
   const xs = series.map(r => new Date(r.bucket).getTime());
-  const gap = bucket * 2000;
+  const gap = bucket * 1500;
   const ds = [];
   if (has('temps')) [1,2,3,4,5].forEach(n => { if (SEL['temp'+n]) ds.push({ label:'temp'+n, yAxisID:'y', data: series.map((r,j)=>({x:xs[j], y:r['temp'+n]})), borderColor:TEMP_COL[n-1], backgroundColor:TEMP_COL[n-1], pointRadius:0, borderWidth:1.8, spanGaps:gap }); });
   if (has('power')) [1,2].forEach(n => { if (SEL['dc'+n]) ds.push({ label:'dc'+n, yAxisID:'yv', data: series.map((r,j)=>({x:xs[j], y:r['dc'+n]})), borderColor:DC_COL[n-1], backgroundColor:DC_COL[n-1], borderDash:[5,3], pointRadius:0, borderWidth:1.6, spanGaps:gap }); });
@@ -538,20 +567,17 @@ function hookHover(chart){
     const scnLane = lanes.find(l => l.k === 'scenario');
     const onScn = scnLane && Math.abs(my - scnLane.y) <= LANE_H/2;
     if (SEL.hover){
+      const r = run ? run.row : null;
       html += `<div class="h">${fmtTs(t)}</div>`;
-      if (b){
-        if (has('temps')) html += `<div>${[1,2,3,4,5].map(n=>`temp${n}: <b>${num(b['temp'+n])}</b>`).join(' · ')} °C</div>`;
-        if (has('power')) html += `<div>dc1: <b>${num(b.dc1)}</b> V · dc2: <b>${num(b.dc2)}</b> V</div>`;
-      } else html += '<div style="opacity:.7">No temperature data here</div>';
-      if (run){
-        const r = run.row;
-        if (has('io')){
-          html += `<div>DI: ${[1,2,3,4,5].map(n=> r['di'+n] ? `<span class="on">${n} ON</span>` : `${n} off`).join(' · ')}</div>`;
-          html += `<div>Relays: ${[1,2,3,4,5,6,7,8,9].map(n=> r['r'+n] ? `<span class="on">${n} ON</span>` : `${n} off`).join(' · ')}</div>`;
-        }
-        if (has('settings')) html += `<div>Scenario: <b>${esc(r.scenario)}</b> (code ${esc(r.code)})</div>`;
-        if (has('alarms')) html += `<div>Alarms: ${(r.alarms||[]).length ? `<span class="on">${esc(r.alarms.join(', '))}</span>` : 'none'}</div>`;
-      } else html += '<div style="opacity:.7">No on/off data here (unit off or offline)</div>';
+      if (inGap(t) || (!b && !r)) html += '<div style="color:#ffd27a">No message received at this time (unit off or messages missed)</div>';
+      if (has('settings')) html += `<div>Scenario : <b>${r ? esc(r.scenario) : '–'}</b>${r && r.code!=null ? ` <span style="opacity:.6">(code ${esc(r.code)})</span>` : ''}</div>`;
+      if (has('alarms')) html += `<div>Alarms : ${r ? ((r.alarms||[]).length ? `<b style="color:#ff9b9b">${esc(r.alarms.join(', '))}</b>` : 'none') : '–'}</div>`;
+      if (has('temps')) html += `<div class="grid5">${[1,2,3,4,5].map(n=>`<span>T${n}</span>`).join('')}${[1,2,3,4,5].map(n=>`<b>${b?num(b['temp'+n]):'–'}</b>`).join('')}</div>`;
+      if (has('power')) html += `<div class="grid5" style="grid-template-columns:repeat(2,auto);justify-content:start"><span>DC1</span><span>DC2</span><b>${b?num(b.dc1):'–'}</b><b>${b?num(b.dc2):'–'}</b></div>`;
+      if (has('io')){
+        html += `<div class="boxes">${[1,2,3,4,5].map(n=>`<span class="bx ${r&&r['di'+n]?'on':''}">DI${n}</span>`).join('')}</div>`;
+        html += `<div class="boxes">${[1,2,3,4,5,6,7,8,9].map(n=>`<span class="bx ${r&&r['r'+n]?'on':''}">R${n}</span>`).join('')}</div>`;
+      }
     } else if (onScn && run){
       html = `<div class="h">${esc(run.row.scenario)}</div><div>${fmtTs(run.s)}</div>`;
     }
