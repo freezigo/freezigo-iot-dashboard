@@ -46,6 +46,16 @@
   .form label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}
   .form .note{font-size:12px;color:var(--mute);margin:-6px 0 10px}
   .checks label{display:inline-flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;margin:0 14px 8px 0}
+  .pick{display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:8px;font-size:13px}
+  .pick .grp{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;padding:4px 8px;border:1px solid var(--line);border-radius:8px}
+  .pick .grp b{font-weight:600;font-size:12px;color:var(--mute);margin-right:2px}
+  .pick label{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}
+  .pick select{font-size:12px;padding:0 2px;border:1px solid var(--line);border-radius:4px}
+  .pick .sw{display:inline-block;width:10px;height:10px;border-radius:2px}
+  .chartwrap{position:relative;height:480px}
+  .hoverbox{position:absolute;pointer-events:none;background:rgba(29,35,48,.94);color:#fff;font-size:12px;line-height:1.45;padding:8px 10px;border-radius:8px;min-width:180px;max-width:300px;z-index:5;white-space:normal}
+  .hoverbox .h{font-weight:600;margin-bottom:4px}
+  .hoverbox .on{color:#ff8a8a;font-weight:600}
   .tabs button{border:none;background:none;padding:6px 10px;border-bottom:2px solid transparent;border-radius:0}
   .tabs button.on{color:var(--ink);background:none;border-bottom-color:var(--acc);font-weight:600}
 </style>
@@ -108,12 +118,14 @@
       <div class="mute" id="dInfo" style="margin-top:8px"></div>
     </div>
 
-    <div class="card sec-temps"><h2>Temperatures (°C)</h2><div class="chartbox tall"><canvas id="cTemp"></canvas></div></div>
-    <div class="grid">
-      <div class="card sec-power"><h2>DC voltage (V)</h2><div class="chartbox"><canvas id="cDc"></canvas></div></div>
-      <div class="card sec-io"><h2>Digital inputs (share of time ON)</h2><div class="chartbox"><canvas id="cDi"></canvas></div></div>
+    <div class="card">
+      <div class="row" style="margin-bottom:6px"><h2 style="margin:0">Graph</h2><span class="flex1"></span>
+        <label class="mute" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="optHover"> Show details on hover</label>
+      </div>
+      <div id="pick" class="pick"></div>
+      <div class="chartwrap"><canvas id="cMain"></canvas><div id="hoverBox" class="hoverbox hidden"></div></div>
+      <div class="mute" style="font-size:12px;margin-top:6px">Rows at the top: a <b style="color:var(--bad)">red</b> dot or line shows when that input or relay is in the state you picked (ON or OFF). A grey line means data exists but it is in the other state. No line means no data (unit off or offline).</div>
     </div>
-    <div class="card sec-io"><h2>Relays (share of time ON)</h2><div class="chartbox tall"><canvas id="cRelay"></canvas></div></div>
     <div class="grid">
       <div class="card"><h2>Latest values</h2><div class="scroll"><table class="kv" id="setTable"></table></div></div>
       <div class="card sec-events"><h2>Alarm and settings history</h2>
@@ -174,7 +186,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B003 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B004 · Freezigo IoT Dashboard</p>
 </main>
 
 <script type="module">
@@ -354,28 +366,204 @@ function bucketFor(from, to){
   const steps = [30,60,120,300,600,900,1800,3600,7200,21600];
   return steps.find(s => secs/s <= 500) || 86400;
 }
+// ===== One combined graph (B004) =====
+const LANE_H = 16;                          // height of one on/off row at the top
+const SAMPLE_S = 30;                        // a single sample is drawn as 30 s long
+const TEMP_COL = ['#2563eb','#d64545','#1f9d55','#d98a00','#7c3aed'];
+const DC_COL = ['#0891b2','#475569'];
+const SCN_COL = ['#7c3aed','#0891b2','#d98a00','#1f9d55','#be185d','#2563eb','#65a30d','#475569'];
+const DEFAULT_SEL = { temp1:1,temp2:1,temp3:1,temp4:1,temp5:1, dc1:0,dc2:0,
+  di1:1,di2:1,di3:1,di4:1,di5:1, r1:0,r2:0,r3:0,r4:0,r5:0,r6:0,r7:0,r8:0,r9:0, alarms:1, scenario:1, hover:1 };
+let SEL = loadSel(), WHEN = loadWhen(), G = null;   // G = data for the graph now on screen
+function loadSel(){ try { return { ...DEFAULT_SEL, ...JSON.parse(localStorage.getItem('iot_sel')||'{}') }; } catch(e){ return { ...DEFAULT_SEL }; } }
+function loadWhen(){ try { return JSON.parse(localStorage.getItem('iot_when')||'{}'); } catch(e){ return {}; } }
+function saveSel(){ try { localStorage.setItem('iot_sel', JSON.stringify(SEL)); localStorage.setItem('iot_when', JSON.stringify(WHEN)); } catch(e){} }
+const whenOn = k => (WHEN[k] || 'ON') === 'ON';   // true = red when ON
+
+function buildPicker(){
+  const cb = (k, label, colour) => `<label><input type="checkbox" data-k="${k}" ${SEL[k]?'checked':''}>${colour?`<span class="sw" style="background:${colour}"></span>`:''}${label}</label>`;
+  const onoff = k => `<select data-w="${k}" title="Red when"><option ${whenOn(k)?'selected':''}>ON</option><option ${!whenOn(k)?'selected':''}>OFF</option></select>`;
+  let h = '';
+  if (has('temps')) h += `<div class="grp"><b>Temperature</b>${[1,2,3,4,5].map(n=>cb('temp'+n,'temp'+n,TEMP_COL[n-1])).join('')}</div>`;
+  if (has('power')) h += `<div class="grp"><b>DC voltage</b>${cb('dc1','dc1',DC_COL[0])}${cb('dc2','dc2',DC_COL[1])}</div>`;
+  if (has('io')) {
+    h += `<div class="grp"><b>Digital inputs</b>${[1,2,3,4,5].map(n=>cb('di'+n,'DI'+n)+onoff('di'+n)).join('&nbsp;')}</div>`;
+    h += `<div class="grp"><b>Relays</b>${[1,2,3,4,5,6,7,8,9].map(n=>cb('r'+n,'R'+n)+onoff('r'+n)).join('&nbsp;')}</div>`;
+  }
+  if (has('alarms') || has('settings')) h += `<div class="grp"><b>Events</b>${has('alarms')?cb('alarms','Alarms'):''}${has('settings')?cb('scenario','Scenario'):''}</div>`;
+  $('pick').innerHTML = h;
+  $('pick').querySelectorAll('input[data-k]').forEach(i => i.onchange = () => { SEL[i.dataset.k] = i.checked ? 1 : 0; saveSel(); drawMain(); });
+  $('pick').querySelectorAll('select[data-w]').forEach(s => s.onchange = () => { WHEN[s.dataset.w] = s.value; saveSel(); drawMain(); });
+  $('optHover').checked = !!SEL.hover;
+  $('optHover').onchange = () => { SEL.hover = $('optHover').checked ? 1 : 0; saveSel(); if (!SEL.hover) $('hoverBox').classList.add('hidden'); };
+}
+
 async function loadDetail(from, to){
   const bucket = bucketFor(from, to);
-  $('dInfo').textContent = `${fmtT(from)} to ${fmtT(to)} · each point = average of ${bucket>=60 ? bucket/60+' min' : bucket+' s'}`;
+  $('dInfo').textContent = `${fmtT(from)} to ${fmtT(to)} · temperature and voltage points = average of ${bucket>=60 ? bucket/60+' min' : bucket+' s'} · on/off rows = exact`;
   const args = { imei: current.imei, from: from.toISOString(), to: to.toISOString() };
-  let rows = [], ev = [];
   try {
-    const [s, e] = await Promise.all([ api('series', { ...args, bucket }), api('events', args) ]);
-    rows = s.rows; ev = e.rows;
-  } catch(e){ $('dInfo').textContent = 'Error: ' + e.message; return; }
-  const xs = rows.map(r => new Date(r.bucket).getTime());
-  const pts = (fn) => rows.map((r,j)=>({ x:xs[j], y:fn(r) }));
-  const ds = (label, i, data, extra={}) => ({ label, data, borderColor:COLORS[i%COLORS.length], backgroundColor:COLORS[i%COLORS.length], pointRadius:0, borderWidth:1.6, spanGaps: bucket*2000, ...extra });
+    const [s, st, e] = await Promise.all([ api('series', { ...args, bucket }), api('states', args), api('events', args) ]);
+    G = { from, to, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows };
+  } catch(err){ $('dInfo').textContent = 'Error: ' + err.message; return; }
+  buildPicker();
+  drawMain();
+  renderEvents(G.events);
+  if (!G.series.length && !G.runs.length) $('dInfo').textContent += ' · no data in this range';
+}
 
-  if (has('temps')) drawChart('cTemp', [1,2,3,4,5].map((n,i)=>ds('temp'+n, i, pts(r=>r['temp'+n]))), from, to, { y:{ title:{display:true,text:'°C'} } });
-  if (has('power')) drawChart('cDc', [ds('dc1',0,pts(r=>r.dc1)), ds('dc2',1,pts(r=>r.dc2))], from, to, { y:{ title:{display:true,text:'V'} } });
-  if (has('io')){
-    drawChart('cDi', [1,2,3,4,5].map((n,i)=>ds('di'+n, i, pts(r=>r['di'+n]==null?null:r['di'+n]*100), {stepped:true})), from, to, { y:{ min:0, max:100, ticks:{ callback:v=>v+'%' } } });
-    const relay = [1,2,3,4,5,6,7,8,9].map((n,i)=>ds('r'+n, i, pts(r=>r['r'+n]==null?null: i + r['r'+n]*0.8), {stepped:true, fill:{value:i}, backgroundColor: COLORS[i%COLORS.length]+'55'}));
-    drawChart('cRelay', relay, from, to, { y:{ min:0, max:9, ticks:{ stepSize:1, callback:v => v<9 ? 'r'+(v+1) : '' } } },
-      c => `${c.dataset.label}: ${Math.round((c.parsed.y - c.datasetIndex)/0.8*100)}% ON`);
+// state rows (only where something changed, or around a gap) -> runs {s, e, row}
+function toRuns(rows){
+  const runs = [];
+  for (let i = 0; i < rows.length; i++){
+    const s = new Date(rows[i].ts).getTime();
+    const next = rows[i+1];
+    const e = (next && !next.after_gap) ? new Date(next.ts).getTime() : s + SAMPLE_S*1000;
+    runs.push({ s, e, row: rows[i] });
   }
-  // events table
+  return runs;
+}
+function runAt(t){
+  if (!G) return null;
+  for (const r of G.runs) if (t >= r.s && t < r.e) return r;
+  return null;
+}
+
+// which rows to draw at the top, in order
+function laneList(){
+  const L = [];
+  if (has('settings') && SEL.scenario) L.push({ k:'scenario', label:'Scenario' });
+  if (has('alarms') && SEL.alarms) L.push({ k:'alarms', label:'Alarms' });
+  if (has('io')) {
+    [1,2,3,4,5].forEach(n => { if (SEL['di'+n]) L.push({ k:'di'+n, label:`DI${n} ${whenOn('di'+n)?'ON':'OFF'}` }); });
+    [1,2,3,4,5,6,7,8,9].forEach(n => { if (SEL['r'+n]) L.push({ k:'r'+n, label:`R${n} ${whenOn('r'+n)?'ON':'OFF'}` }); });
+  }
+  return L;
+}
+const scnColour = name => { let h = 0; for (const c of String(name)) h = (h*31 + c.charCodeAt(0)) >>> 0; return SCN_COL[h % SCN_COL.length]; };
+
+const lanePlugin = {
+  id: 'lanes',
+  afterDatasetsDraw(chart){
+    if (!G) return;
+    const lanes = laneList(); if (!lanes.length) return;
+    const { ctx, chartArea:a, scales:{ x } } = chart;
+    const top0 = a.top - lanes.length*LANE_H - 6;
+    const px = t => Math.max(a.left, Math.min(a.right, x.getPixelForValue(t)));
+    ctx.save();
+    ctx.font = '11px Inter, Segoe UI, Roboto, Arial, sans-serif'; ctx.textBaseline = 'middle'; ctx.lineCap = 'round';
+    lanes.forEach((ln, i) => {
+      const y = top0 + i*LANE_H + LANE_H/2;
+      ln.y = y;
+      ctx.fillStyle = '#6b7383'; ctx.textAlign = 'right'; ctx.fillText(ln.label, a.left - 6, y);
+      ctx.strokeStyle = '#eef1f6'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.left, y); ctx.lineTo(a.right, y); ctx.stroke();
+      for (const r of G.runs){
+        if (r.e < x.min || r.s > x.max) continue;
+        const x1 = px(r.s), x2 = Math.max(px(r.e) - 1, x1);
+        if (ln.k === 'scenario'){
+          const prev = G.runs[G.runs.indexOf(r)-1];
+          if (!prev || prev.row.scenario !== r.row.scenario || r.row.after_gap){
+            ctx.fillStyle = scnColour(r.row.scenario); ctx.beginPath(); ctx.arc(x1, y, 5, 0, Math.PI*2); ctx.fill();
+          }
+          continue;
+        }
+        let hit;
+        if (ln.k === 'alarms') hit = (r.row.alarms||[]).length > 0;
+        else { const v = r.row[ln.k]; if (v === null || v === undefined) continue; hit = whenOn(ln.k) ? !!v : !v; }
+        ctx.strokeStyle = hit ? '#d64545' : '#c9ced8';
+        ctx.lineWidth = hit ? 9 : 2;
+        ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+      }
+    });
+    chart._lanes = lanes;
+    // hover line
+    if (chart._hoverX != null){
+      ctx.strokeStyle = 'rgba(29,35,48,.35)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+      ctx.beginPath(); ctx.moveTo(chart._hoverX, top0); ctx.lineTo(chart._hoverX, a.bottom); ctx.stroke();
+    }
+    ctx.restore();
+  }
+};
+
+function drawMain(){
+  if (!G) return;
+  const { from, to, bucket, series } = G;
+  const xs = series.map(r => new Date(r.bucket).getTime());
+  const gap = bucket * 2000;
+  const ds = [];
+  if (has('temps')) [1,2,3,4,5].forEach(n => { if (SEL['temp'+n]) ds.push({ label:'temp'+n, yAxisID:'y', data: series.map((r,j)=>({x:xs[j], y:r['temp'+n]})), borderColor:TEMP_COL[n-1], backgroundColor:TEMP_COL[n-1], pointRadius:0, borderWidth:1.8, spanGaps:gap }); });
+  if (has('power')) [1,2].forEach(n => { if (SEL['dc'+n]) ds.push({ label:'dc'+n, yAxisID:'yv', data: series.map((r,j)=>({x:xs[j], y:r['dc'+n]})), borderColor:DC_COL[n-1], backgroundColor:DC_COL[n-1], borderDash:[5,3], pointRadius:0, borderWidth:1.6, spanGaps:gap }); });
+  const lanes = laneList();
+  const span = to - from;
+  const showV = ds.some(d => d.yAxisID === 'yv');
+  if (charts.main) charts.main.destroy();
+  charts.main = new Chart($('cMain'), {
+    type:'line', data:{ datasets: ds }, plugins:[lanePlugin],
+    options:{
+      responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
+      layout:{ padding:{ top: lanes.length*LANE_H + 10, left: 10 } },
+      events:[],                                   // hover handled below
+      scales:{
+        x:{ type:'linear', min:from.getTime(), max:to.getTime(),
+            ticks:{ maxTicksLimit:9, callback: v => new Date(v).toLocaleString('en-GB', span > 2*86400e3 ? {day:'2-digit',month:'short'} : {hour:'2-digit',minute:'2-digit'}) } },
+        y:{ position:'left', title:{ display:true, text:'°C' }, afterFit: s => { s.width = Math.max(s.width, 64); } },
+        yv:{ position:'right', display: showV, title:{ display:true, text:'V' }, grid:{ drawOnChartArea:false } },
+      },
+      plugins:{ legend:{ display:false }, tooltip:{ enabled:false } }
+    }
+  });
+  hookHover(charts.main);
+}
+
+// ----- hover: crosshair + details box -----
+function nearestBucket(t){
+  if (!G || !G.series.length) return null;
+  let best = null, bd = Infinity;
+  for (const r of G.series){ const d = Math.abs(new Date(r.bucket).getTime() + G.bucket*500 - t); if (d < bd){ bd = d; best = r; } }
+  return bd <= G.bucket*1500 ? best : null;
+}
+function hookHover(chart){
+  const cv = chart.canvas, box = $('hoverBox');
+  cv.onmouseleave = () => { chart._hoverX = null; box.classList.add('hidden'); chart.draw(); };
+  cv.onmousemove = (ev) => {
+    const rect = cv.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const a = chart.chartArea;
+    if (mx < a.left || mx > a.right){ cv.onmouseleave(); return; }
+    const t = chart.scales.x.getValueForPixel(mx);
+    chart._hoverX = mx; chart.draw();
+    const run = runAt(t), b = nearestBucket(t);
+    let html = '';
+    // scenario name when the pointer is on the scenario row (always, even with details off)
+    const lanes = chart._lanes || [];
+    const scnLane = lanes.find(l => l.k === 'scenario');
+    const onScn = scnLane && Math.abs(my - scnLane.y) <= LANE_H/2;
+    if (SEL.hover){
+      html += `<div class="h">${fmtTs(t)}</div>`;
+      if (b){
+        if (has('temps')) html += `<div>${[1,2,3,4,5].map(n=>`temp${n}: <b>${num(b['temp'+n])}</b>`).join(' · ')} °C</div>`;
+        if (has('power')) html += `<div>dc1: <b>${num(b.dc1)}</b> V · dc2: <b>${num(b.dc2)}</b> V</div>`;
+      } else html += '<div style="opacity:.7">No temperature data here</div>';
+      if (run){
+        const r = run.row;
+        if (has('io')){
+          html += `<div>DI: ${[1,2,3,4,5].map(n=> r['di'+n] ? `<span class="on">${n} ON</span>` : `${n} off`).join(' · ')}</div>`;
+          html += `<div>Relays: ${[1,2,3,4,5,6,7,8,9].map(n=> r['r'+n] ? `<span class="on">${n} ON</span>` : `${n} off`).join(' · ')}</div>`;
+        }
+        if (has('settings')) html += `<div>Scenario: <b>${esc(r.scenario)}</b> (code ${esc(r.code)})</div>`;
+        if (has('alarms')) html += `<div>Alarms: ${(r.alarms||[]).length ? `<span class="on">${esc(r.alarms.join(', '))}</span>` : 'none'}</div>`;
+      } else html += '<div style="opacity:.7">No on/off data here (unit off or offline)</div>';
+    } else if (onScn && run){
+      html = `<div class="h">${esc(run.row.scenario)}</div><div>${fmtTs(run.s)}</div>`;
+    }
+    if (!html){ box.classList.add('hidden'); return; }
+    box.innerHTML = html; box.classList.remove('hidden');
+    const w = box.offsetWidth, wrapW = cv.parentElement.clientWidth;
+    box.style.left = (mx + 14 + w > wrapW ? mx - w - 14 : mx + 14) + 'px';
+    box.style.top = Math.max(0, my - 20) + 'px';
+  };
+}
+
+function renderEvents(ev){
   const cols = ['Time','Change'];
   if (has('alarms')) cols.push('Alarms');
   if (has('settings')) cols.push('Scenario','sp');
@@ -386,27 +574,8 @@ async function loadDetail(from, to){
     if (has('settings')) t += `<td>${esc(e.scenario)}</td><td>${esc((e.sp||[]).join(', '))}</td>`;
     return `<tr>${t}</tr>`;
   }).join('') : `<tr><td colspan="${cols.length}" class="mute">No data in this range.</td></tr>`;
-  if (!rows.length) $('dInfo').textContent += ' · no data in this range';
 }
-function drawChart(id, datasets, from, to, scales={}, labelFn=null){
-  if (charts[id]) charts[id].destroy();
-  const span = to - from;
-  const callbacks = { title: items => items.length ? fmtTs(items[0].parsed.x) : '' };
-  if (labelFn) callbacks.label = labelFn;
-  charts[id] = new Chart($(id), {
-    type:'line', data:{ datasets },
-    options:{
-      responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true,
-      interaction:{ mode:'nearest', axis:'x', intersect:false },
-      scales:{
-        x:{ type:'linear', min:from.getTime(), max:to.getTime(),
-            ticks:{ maxTicksLimit:8, callback: v => new Date(v).toLocaleString('en-GB', span > 2*86400e3 ? {day:'2-digit',month:'short'} : {hour:'2-digit',minute:'2-digit'}) } },
-        ...scales
-      },
-      plugins:{ legend:{ labels:{ boxWidth:12 } }, tooltip:{ callbacks } }
-    }
-  });
-}
+
 function renderLatest(r){
   const t = $('setTable');
   if (!r){ t.innerHTML = '<tr><td class="mute">No data.</td></tr>'; return; }
