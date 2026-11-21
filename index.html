@@ -12,6 +12,7 @@
   header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
   header h1{font-size:17px;margin:0;font-weight:600}
   header small{color:var(--mute)}
+  #updBtn.new{background:#fde2e2;border-color:#d64545;color:#8a1c1c;font-weight:600}
   .flex1{flex:1}
   button,select,input{font:inherit}
   button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer}
@@ -91,6 +92,7 @@
   <span id="crumb" class="mute"></span>
   <span class="flex1"></span>
   <small id="who"></small>
+  <button id="updBtn" title="Load the newest build of this page">Update</button>
   <button id="logoutBtn" class="hidden">Log out</button>
 </header>
 
@@ -214,7 +216,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B011 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B012 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -226,6 +228,38 @@ window.showErp = function (email) {
   document.getElementById('erpBtn').classList.toggle('hidden', !(f || /@(staff\.)?freezigo\.in$/i.test(email || '')))
 }
 window.showErp('')
+</script>
+<script>
+// B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
+// The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
+(function(){
+  var BUILD = 'B012';
+  var btn = document.getElementById('updBtn');
+  function latest(){
+    return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
+      .then(function(r){ return r.text(); })
+      .then(function(t){ var m = t.match(/Build (B\d+) ·/); return m ? m[1] : null; });
+  }
+  function num(b){ return parseInt(String(b || '').slice(1), 10) || 0; }
+  function check(quiet){
+    return latest().then(function(b){
+      if (b && num(b) > num(BUILD)){ btn.textContent = 'Update to ' + b; btn.classList.add('new'); btn.dataset.to = b; }
+      else if (!quiet){ btn.textContent = 'Up to date (' + BUILD + ')'; setTimeout(function(){ btn.textContent = 'Update'; }, 3000); }
+      return b;
+    }).catch(function(){ if (!quiet){ btn.textContent = 'No connection'; setTimeout(function(){ btn.textContent = 'Update'; }, 3000); } });
+  }
+  btn.onclick = function(){
+    btn.textContent = 'Checking…';
+    check(false).then(function(b){
+      if (b && num(b) > num(BUILD)){
+        var q = new URLSearchParams(location.search); q.set('v', b);
+        location.replace(location.pathname + '?' + q.toString());
+      }
+    });
+  };
+  check(true);
+  setInterval(function(){ check(true); }, 5 * 60 * 1000);   // look again every 5 min
+})();
 </script>
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
