@@ -53,6 +53,13 @@
   .pick select{font-size:12px;padding:0 2px;border:1px solid var(--line);border-radius:4px}
   .pick .sw{display:inline-block;width:10px;height:10px;border-radius:2px}
   .chartwrap{position:relative;height:480px;user-select:none}
+  .sbwrap{margin-top:4px}
+  .sbtrack{position:relative;height:14px;background:#eef1f6;border:1px solid var(--line);border-radius:7px;cursor:pointer;touch-action:none}
+  .sbthumb{position:absolute;top:1px;bottom:1px;min-width:14px;background:#9db4e8;border-radius:6px;cursor:grab}
+  .sbthumb:hover,.sbthumb.drag{background:#2563eb}
+  .sbthumb.drag{cursor:grabbing}
+  .sblabels{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);margin-top:2px}
+  .sblabels #sbMid{color:var(--ink);font-weight:600}
   .stats{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:13px;margin:2px 0 8px}
   .stats .bar{display:flex;width:220px;height:10px;border-radius:5px;overflow:hidden;background:#e3e6ec}
   .stats .bar i{display:block;height:100%}
@@ -141,6 +148,10 @@
       <div id="pick" class="pick"></div>
       <div id="dStats" class="stats"></div>
       <div class="chartwrap"><canvas id="cMain"></canvas><div id="hoverBox" class="hoverbox hidden"></div></div>
+      <div id="sbWrap" class="sbwrap">
+        <div id="sbTrack" class="sbtrack" title="Drag the bar to move back or forward in time. Click the track to jump there."><div id="sbThumb" class="sbthumb"></div></div>
+        <div class="sblabels"><span id="sbL"></span><span id="sbMid"></span><span id="sbR"></span></div>
+      </div>
       <div class="mute" style="font-size:12px;margin-top:6px">Zoom: drag a box on the graph, or drag along the time axis (bottom), the °C axis (left) or the V axis (right). Double-click = zoom out one step. Data row: <b style="color:#1f9d55">green</b> = sent live, <b style="color:#e8890c">orange</b> = stored while offline and sent later; each small dot = one message. Other rows: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
     </div>
     <div class="grid">
@@ -203,7 +214,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B009 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B010 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -451,6 +462,7 @@ async function loadDetail(from, to){
   buildPicker();
   drawMain();
   renderStats();
+  renderScroll();
   renderEvents(G.events);
   if (!G.series.length && !G.runs.length) $('dInfo').textContent += ' · no data in this range';
 }
@@ -598,6 +610,7 @@ function drawMain(){
         yv:{ position:'right', display: showV, title:{ display:true, text:'V' }, grid:{ drawOnChartArea:false },
             ...(ZOOM.yv ? { min: ZOOM.yv[0], max: ZOOM.yv[1] } : {}) },
       },
+      onResize: () => setTimeout(() => renderScroll(), 0),
       plugins:{ legend:{ display:false }, tooltip:{ enabled:false } }
     }
   });
@@ -651,6 +664,59 @@ function zoomReset(){
   loadDetail(BASE.from, BASE.to);
 }
 $('zoomBack').onclick = zoomBack;
+
+// ----- scroll bar under the time axis (B010) -----
+const SB_SPAN = 31 * 86400e3;                       // the bar covers the last 31 days (the most the server gives at once)
+function sbExtent(){ const now = Date.now(); return [Math.min(G.from.getTime(), now - SB_SPAN), Math.max(G.to.getTime(), now)]; }
+function fmtD(t){ return new Date(t).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }
+function renderScroll(f, t){
+  if (!G || !charts.main) return;
+  const a = charts.main.chartArea, wrapW = $('sbWrap').parentElement.clientWidth;
+  // line the bar up with the graph's time axis
+  $('sbWrap').style.marginLeft = (a.left) + 'px';
+  $('sbWrap').style.marginRight = Math.max(0, charts.main.width - a.right) + 'px';
+  const [e0, e1] = sbExtent(), W = e1 - e0;
+  f = f ?? G.from.getTime(); t = t ?? G.to.getTime();
+  const th = $('sbThumb');
+  th.style.left = (100 * (f - e0) / W) + '%';
+  th.style.width = (100 * (t - f) / W) + '%';
+  $('sbL').textContent = fmtD(e0);
+  $('sbR').textContent = 'now';
+  $('sbMid').textContent = fmtD(f) + '  to  ' + fmtD(t);
+}
+(function(){
+  const track = $('sbTrack'), th = $('sbThumb');
+  let drag = null;
+  const msPerPx = () => { const [e0, e1] = sbExtent(); return (e1 - e0) / track.clientWidth; };
+  const clampWin = (f, len) => { const [e0, e1] = sbExtent(); const now = Date.now(); f = Math.max(e0, Math.min(f, Math.min(e1, now) - len)); return [f, f + len]; };
+  th.onpointerdown = (ev) => {
+    if (!G) return;
+    ev.preventDefault(); ev.stopPropagation();
+    th.setPointerCapture(ev.pointerId); th.classList.add('drag');
+    drag = { x0: ev.clientX, f0: G.from.getTime(), len: G.to.getTime() - G.from.getTime(), f: G.from.getTime() };
+  };
+  th.onpointermove = (ev) => {
+    if (!drag) return;
+    const [f, t] = clampWin(drag.f0 + (ev.clientX - drag.x0) * msPerPx(), drag.len);
+    drag.f = f; renderScroll(f, t);
+  };
+  th.onpointerup = (ev) => {
+    if (!drag) return;
+    th.classList.remove('drag');
+    const d = drag; drag = null;
+    if (Math.abs(d.f - d.f0) < 1000) return;
+    document.querySelectorAll('.rng').forEach(b => b.classList.remove('on'));
+    zoomTo({ from: new Date(d.f), to: new Date(d.f + d.len) });
+  };
+  track.onpointerdown = (ev) => {          // click on the empty track: centre the window there
+    if (!G || ev.target === th) return;
+    const r = track.getBoundingClientRect(), [e0, e1] = sbExtent();
+    const c = e0 + (ev.clientX - r.left) / r.width * (e1 - e0), len = G.to - G.from;
+    const [f, t] = clampWin(c - len / 2, len);
+    document.querySelectorAll('.rng').forEach(b => b.classList.remove('on'));
+    zoomTo({ from: new Date(f), to: new Date(t) });
+  };
+})();
 $('zoomReset').onclick = zoomReset;
 
 function hookHover(chart){
