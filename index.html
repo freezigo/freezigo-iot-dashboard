@@ -214,7 +214,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B010 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B011 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -403,10 +403,10 @@ $('customBtn').onclick = () => {
   BASE = { from, to }; ZOOM = { y:null, yv:null }; ZHIST = [];
   loadDetail(from, to);
 };
-function bucketFor(from, to){
+function bucketFor(from, to, maxPts = 500){
   const secs = (to - from)/1000;
   const steps = [30,60,120,300,600,900,1800,3600,7200,21600];
-  return steps.find(s => secs/s <= 500) || 86400;
+  return steps.find(s => secs/s <= maxPts) || 86400;
 }
 // ===== One combined graph (B004) =====
 const LANE_H = 16;                          // height of one on/off row at the top
@@ -449,22 +449,47 @@ function buildPicker(){
   $('optHover').onclick = () => { SEL.hover = SEL.hover ? 0 : 1; saveSel(); $('optHover').classList.toggle('on', !!SEL.hover); if (!SEL.hover) $('hoverBox').classList.add('hidden'); };
 }
 
+// Data is fetched for a wider span than the window (one window-length each side), so scrolling is instant.
+let LOADSEQ = 0, DRAG_VIEW = null;
 async function loadDetail(from, to){
-  const bucket = bucketFor(from, to);
-  $('dInfo').textContent = `${fmtT(from)} to ${fmtT(to)} · temperature and voltage points = average of ${bucket>=60 ? bucket/60+' min' : bucket+' s'} · on/off rows = exact`;
-  const args = { imei: current.imei, from: from.toISOString(), to: to.toISOString() };
+  const seq = ++LOADSEQ;
+  const len = to - from, SPAN = 31 * 86400e3;
+  const pad = Math.max(0, Math.min(len, (SPAN - len) / 2));
+  const dfrom = new Date(from.getTime() - pad);
+  const dto = new Date(Math.max(to.getTime(), Math.min(to.getTime() + pad, Date.now() + 60e3)));
+  const bucket = bucketFor(dfrom, dto, 900);
+  const args = { imei: current.imei, from: dfrom.toISOString(), to: dto.toISOString() };
+  let res;
   try {
-    const [s, st, e, dr] = await Promise.all([ api('series', { ...args, bucket }), api('states', args), api('events', args), api('data_runs', args) ]);
-    G = { from, to, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows,
-          data: dr.rows.map(r => ({ s: new Date(r.s).getTime(), e: new Date(r.e).getTime(), source: r.source, n: r.n, pts: (r.pts||[]).map(v => v*1000) })) };
-  } catch(err){ $('dInfo').textContent = 'Error: ' + err.message; return; }
-  $('fromIn').value = toLocalInput(from); $('toIn').value = toLocalInput(to);
+    res = await Promise.all([ api('series', { ...args, bucket }), api('states', args), api('events', args), api('data_runs', args) ]);
+  } catch(err){ if (seq === LOADSEQ) $('dInfo').textContent = 'Error: ' + err.message; return; }
+  if (seq !== LOADSEQ) return;                         // a newer request has started
+  const [s, st, e, dr] = res;
+  const view = DRAG_VIEW || { from, to };              // while dragging, keep where the bar is now
+  G = { from: view.from, to: view.to, dfrom, dto, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows,
+        data: dr.rows.map(r => ({ s: new Date(r.s).getTime(), e: new Date(r.e).getTime(), source: r.source, n: r.n, pts: (r.pts||[]).map(v => v*1000) })) };
   buildPicker();
   drawMain();
+  afterView();
+  if (!G.series.length && !G.runs.length) $('dInfo').textContent += ' · no data in this range';
+}
+// everything that depends on the visible window
+function afterView(){
+  $('dInfo').textContent = `${fmtT(G.from)} to ${fmtT(G.to)} · temperature and voltage points = average of ${G.bucket>=60 ? G.bucket/60+' min' : G.bucket+' s'} · on/off rows = exact`;
+  if (!DRAG_VIEW){ $('fromIn').value = toLocalInput(G.from); $('toIn').value = toLocalInput(G.to); }
   renderStats();
   renderScroll();
-  renderEvents(G.events);
-  if (!G.series.length && !G.runs.length) $('dInfo').textContent += ' · no data in this range';
+  const f = G.from.getTime(), t = G.to.getTime();
+  renderEvents((G.events||[]).filter(ev => { const x = new Date(ev.ts).getTime(); return x >= f && x < t; }));
+}
+// move the visible window without fetching (data already loaded around it)
+function setView(f, t){
+  if (!G || !charts.main) return;
+  G.from = new Date(f); G.to = new Date(t);
+  const c = charts.main;
+  c.options.scales.x.min = f; c.options.scales.x.max = t;
+  c.update('none');
+  afterView();
 }
 
 // state rows (only where something changed, or around a gap) -> runs {s, e, row}
@@ -695,18 +720,28 @@ function renderScroll(f, t){
     th.setPointerCapture(ev.pointerId); th.classList.add('drag');
     drag = { x0: ev.clientX, f0: G.from.getTime(), len: G.to.getTime() - G.from.getTime(), f: G.from.getTime() };
   };
+  let refetchTimer = null;
   th.onpointermove = (ev) => {
     if (!drag) return;
     const [f, t] = clampWin(drag.f0 + (ev.clientX - drag.x0) * msPerPx(), drag.len);
-    drag.f = f; renderScroll(f, t);
+    drag.f = f;
+    DRAG_VIEW = { from: new Date(f), to: new Date(t) };
+    setView(f, t);                                   // instant: graph moves with the bar
+    // near or past the edge of what is loaded: fetch more around the new position (at most every 300 ms)
+    const margin = drag.len * 0.25;
+    if ((f - margin < G.dfrom.getTime() || t + margin > G.dto.getTime()) && !refetchTimer){
+      refetchTimer = setTimeout(() => { refetchTimer = null; if (DRAG_VIEW) loadDetail(DRAG_VIEW.from, DRAG_VIEW.to); }, 300);
+    }
   };
   th.onpointerup = (ev) => {
     if (!drag) return;
     th.classList.remove('drag');
     const d = drag; drag = null;
-    if (Math.abs(d.f - d.f0) < 1000) return;
+    const v = DRAG_VIEW; DRAG_VIEW = null;
+    if (Math.abs(d.f - d.f0) < 1000 || !v) return;
     document.querySelectorAll('.rng').forEach(b => b.classList.remove('on'));
-    zoomTo({ from: new Date(d.f), to: new Date(d.f + d.len) });
+    ZHIST.push({ from: new Date(d.f0), to: new Date(d.f0 + d.len), y: ZOOM.y, yv: ZOOM.yv });
+    if (v.from < G.dfrom || v.to > G.dto) loadDetail(v.from, v.to); else afterView();
   };
   track.onpointerdown = (ev) => {          // click on the empty track: centre the window there
     if (!G || ev.target === th) return;
