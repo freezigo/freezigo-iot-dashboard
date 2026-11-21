@@ -70,6 +70,7 @@
 </head>
 <body>
 <header>
+  <a id="erpBtn" class="hidden" href="../" style="text-decoration:none;font-weight:600;padding:6px 10px;border:1px solid var(--line);border-radius:6px;color:inherit">&larr; ERP</a>
   <h1>Freezigo IoT</h1>
   <div class="tabs hidden" id="tabs">
     <button id="tabMachines" class="on">Machines</button>
@@ -194,9 +195,19 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B007 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B008 · Freezigo IoT Dashboard</p>
 </main>
 
+<script>
+// B008 (ERP w120 Data Log): a way back to the ERP. Shown when the page was opened from the ERP menu (?from=erp, kept for the tab)
+// or for a Freezigo staff login; customers never see it. A plain script, so it works even before the login part loads.
+window.showErp = function (email) {
+  var f = false
+  try { if (new URLSearchParams(location.search).get('from') === 'erp') sessionStorage.setItem('fromErp', '1'); f = sessionStorage.getItem('fromErp') === '1' } catch (e) {}
+  document.getElementById('erpBtn').classList.toggle('hidden', !(f || /@(staff\.)?freezigo\.in$/i.test(email || '')))
+}
+window.showErp('')
+</script>
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
@@ -215,6 +226,7 @@ const SECTIONS = [
   ['alarms','Alarms'],
 ];
 
+const showErp = window.showErp
 const sb = createClient(ERP_URL, ERP_KEY, { auth: { flowType: 'pkce', detectSessionInUrl: true, persistSession: true } });
 const $ = id => document.getElementById(id);
 const charts = {};
@@ -263,6 +275,7 @@ async function startInner(){
   try { ME = (await api('me')).me; }
   catch(e){ return showLogin(e.message, session.user.email); }
   $('who').textContent = ME.name ? `${ME.name} (${ME.email})` : ME.email;
+  showErp(ME.email);
   $('logoutBtn').classList.remove('hidden');
   $('login').classList.add('hidden'); $('app').classList.remove('hidden'); $('tabs').classList.remove('hidden');
   $('tabAccess').classList.toggle('hidden', !ME.is_admin);
