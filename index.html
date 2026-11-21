@@ -132,7 +132,7 @@
       </div>
       <div id="pick" class="pick"></div>
       <div class="chartwrap"><canvas id="cMain"></canvas><div id="hoverBox" class="hoverbox hidden"></div></div>
-      <div class="mute" style="font-size:12px;margin-top:6px">Rows at the top: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
+      <div class="mute" style="font-size:12px;margin-top:6px">Data row: <b style="color:#1f9d55">green</b> = sent live, <b style="color:#e8890c">orange</b> = stored while offline and sent later; each small dot = one message. Other rows: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
     </div>
     <div class="grid">
       <div class="card"><h2>Latest values</h2><div class="scroll"><table class="kv" id="setTable"></table></div></div>
@@ -194,7 +194,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B006 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B007 · Freezigo IoT Dashboard</p>
 </main>
 
 <script type="module">
@@ -379,9 +379,10 @@ const LANE_H = 16;                          // height of one on/off row at the t
 const SAMPLE_S = 30;                        // a single sample is drawn as 30 s long
 const TEMP_COL = ['#2563eb','#d64545','#1f9d55','#d98a00','#7c3aed'];
 const DC_COL = ['#0891b2','#475569'];
+const DATA_COL = { live:'#1f9d55', offline:'#e8890c' };
 const SCN_COL = ['#7c3aed','#0891b2','#d98a00','#1f9d55','#be185d','#2563eb','#65a30d','#475569'];
 const DEFAULT_SEL = { temp1:1,temp2:1,temp3:1,temp4:1,temp5:1, dc1:0,dc2:0,
-  di1:1,di2:1,di3:1,di4:1,di5:1, r1:0,r2:0,r3:0,r4:0,r5:0,r6:0,r7:0,r8:0,r9:0, alarms:1, scenario:1, hover:1, sp:1, hys:1, tm:1 };
+  di1:1,di2:1,di3:1,di4:1,di5:1, r1:0,r2:0,r3:0,r4:0,r5:0,r6:0,r7:0,r8:0,r9:0, alarms:1, scenario:1, hover:1, sp:1, hys:1, tm:1, dlive:1, doff:1 };
 let SEL = loadSel(), WHEN = loadWhen(), G = null;   // G = data for the graph now on screen
 function loadSel(){ try { return { ...DEFAULT_SEL, ...JSON.parse(localStorage.getItem('iot_sel')||'{}') }; } catch(e){ return { ...DEFAULT_SEL }; } }
 function loadWhen(){ try { return JSON.parse(localStorage.getItem('iot_when')||'{}'); } catch(e){ return {}; } }
@@ -393,6 +394,7 @@ function buildPicker(){
   const grp = (title, keys, inner) => `<div class="grp"><button class="tg all" data-g="${keys.join(',')}" title="Select or clear all">${title}</button>${inner}</div>`;
   let h = '';
   const T = [1,2,3,4,5].map(n=>'temp'+n), V = ['dc1','dc2'], D = [1,2,3,4,5].map(n=>'di'+n), R = [1,2,3,4,5,6,7,8,9].map(n=>'r'+n);
+  h += grp('Data', ['dlive','doff'], tg('dlive','Online', DATA_COL.live) + tg('doff','Offline (sent later)', DATA_COL.offline));
   if (has('temps')) h += grp('Temperatures', T, T.map((k,i)=>tg(k,'T'+(i+1),TEMP_COL[i])).join(''));
   if (has('power')) h += grp('DC voltage', V, tg('dc1','DC1',DC_COL[0]) + tg('dc2','DC2',DC_COL[1]));
   if (has('io')) {
@@ -417,8 +419,9 @@ async function loadDetail(from, to){
   $('dInfo').textContent = `${fmtT(from)} to ${fmtT(to)} · temperature and voltage points = average of ${bucket>=60 ? bucket/60+' min' : bucket+' s'} · on/off rows = exact`;
   const args = { imei: current.imei, from: from.toISOString(), to: to.toISOString() };
   try {
-    const [s, st, e] = await Promise.all([ api('series', { ...args, bucket }), api('states', args), api('events', args) ]);
-    G = { from, to, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows };
+    const [s, st, e, dr] = await Promise.all([ api('series', { ...args, bucket }), api('states', args), api('events', args), api('data_runs', args) ]);
+    G = { from, to, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows,
+          data: dr.rows.map(r => ({ s: new Date(r.s).getTime(), e: new Date(r.e).getTime(), source: r.source, n: r.n, pts: (r.pts||[]).map(v => v*1000) })) };
   } catch(err){ $('dInfo').textContent = 'Error: ' + err.message; return; }
   buildPicker();
   drawMain();
@@ -455,6 +458,7 @@ function runAt(t){
 // which rows to draw at the top, in order
 function laneList(){
   const L = [];
+  if (SEL.dlive || SEL.doff) L.push({ k:'data', label:'Data' });
   if (has('settings') && SEL.scenario) L.push({ k:'scenario', label:'Scenario' });
   if (has('alarms') && SEL.alarms) L.push({ k:'alarms', label:'Alarms' });
   if (has('io')) {
@@ -487,6 +491,22 @@ const lanePlugin = {
       ln.y = y;
       ctx.fillStyle = '#6b7383'; ctx.textAlign = 'right'; ctx.fillText(ln.label, a.left - 6, y);
       ctx.strokeStyle = '#eef1f6'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.left, y); ctx.lineTo(a.right, y); ctx.stroke();
+      if (ln.k === 'data'){
+        const D = G.data || [];
+        D.forEach((d, j) => {
+          const on = d.source === 'offline' ? SEL.doff : SEL.dlive;
+          if (!on || d.e + SAMPLE_S*1000 < x.min || d.s > x.max) return;
+          const nx = D[j+1];
+          const end = (nx && nx.s - d.e <= 180e3) ? nx.s : d.e + SAMPLE_S*1000;
+          const col = DATA_COL[d.source] || DATA_COL.live;
+          ctx.strokeStyle = col + '88'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(px(d.s), y); ctx.lineTo(Math.max(px(end), px(d.s)+1), y); ctx.stroke();
+          ctx.fillStyle = col;
+          let last = -9;
+          for (const t of d.pts){ const xx = px(t); if (xx - last < 2) continue; last = xx; ctx.beginPath(); ctx.arc(xx, y, 1.6, 0, Math.PI*2); ctx.fill(); }
+        });
+        return;
+      }
       for (const r of G.runs){
         if (r.e < x.min || r.s > x.max) continue;
         const x1 = px(r.s), x2 = Math.max(px(r.e) - 1, x1);
@@ -570,6 +590,8 @@ function hookHover(chart){
     if (SEL.hover){
       const r = run ? run.row : null;
       html += `<div class="h">${fmtTs(t)}</div>`;
+      const dk = (G.data||[]).find((d, j, D) => t >= d.s && t < ((D[j+1] && D[j+1].s - d.e <= 180e3) ? D[j+1].s : d.e + SAMPLE_S*1000));
+      if (dk) html += `<div>Data : <b style="color:${dk.source==='offline'?'#ffb35c':'#7ee2a8'}">${dk.source==='offline'?'Offline (sent later)':'Online (sent live)'}</b></div>`;
       if (inGap(t) || (!b && !r)) html += '<div style="color:#ffd27a">No message received at this time (unit off or messages missed)</div>';
       if (has('settings')) html += `<div>Scenario : <b>${r ? esc(r.scenario) : '–'}</b>${r && r.code!=null ? ` <span style="opacity:.6">(code ${esc(r.code)})</span>` : ''}</div>`;
       if (has('alarms')) html += `<div>Alarms : ${r ? ((r.alarms||[]).length ? `<b style="color:#ff9b9b">${esc(r.alarms.join(', '))}</b>` : 'none') : '–'}</div>`;
