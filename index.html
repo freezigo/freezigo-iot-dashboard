@@ -52,7 +52,12 @@
   .pick label{display:inline-flex;gap:4px;align-items:center;white-space:nowrap}
   .pick select{font-size:12px;padding:0 2px;border:1px solid var(--line);border-radius:4px}
   .pick .sw{display:inline-block;width:10px;height:10px;border-radius:2px}
-  .chartwrap{position:relative;height:480px}
+  .chartwrap{position:relative;height:480px;user-select:none}
+  .stats{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:13px;margin:2px 0 8px}
+  .stats .bar{display:flex;width:220px;height:10px;border-radius:5px;overflow:hidden;background:#e3e6ec}
+  .stats .bar i{display:block;height:100%}
+  .stats b{font-weight:600}
+  .stats .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px}
   .tg{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--ink)}
   .tg.on,.tg.on:hover{background:#fde2e2;border-color:#e8a0a0;color:var(--ink)}
   .tg.all{font-weight:600;color:var(--mute)}
@@ -129,11 +134,14 @@
 
     <div class="card">
       <div class="row" style="margin-bottom:6px"><h2 style="margin:0">Graph</h2><span class="flex1"></span>
+        <button class="tg" id="zoomBack" title="Go back one zoom step (or double-click the graph)">Zoom out</button>
+        <button class="tg" id="zoomReset" title="Back to the chosen range">Reset zoom</button>
         <button class="tg" id="optHover">Details on hover</button>
       </div>
       <div id="pick" class="pick"></div>
+      <div id="dStats" class="stats"></div>
       <div class="chartwrap"><canvas id="cMain"></canvas><div id="hoverBox" class="hoverbox hidden"></div></div>
-      <div class="mute" style="font-size:12px;margin-top:6px">Data row: <b style="color:#1f9d55">green</b> = sent live, <b style="color:#e8890c">orange</b> = stored while offline and sent later; each small dot = one message. Other rows: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
+      <div class="mute" style="font-size:12px;margin-top:6px">Zoom: drag a box on the graph, or drag along the time axis (bottom), the °C axis (left) or the V axis (right). Double-click = zoom out one step. Data row: <b style="color:#1f9d55">green</b> = sent live, <b style="color:#e8890c">orange</b> = stored while offline and sent later; each small dot = one message. Other rows: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
     </div>
     <div class="grid">
       <div class="card"><h2>Latest values</h2><div class="scroll"><table class="kv" id="setTable"></table></div></div>
@@ -195,7 +203,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B008 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B009 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -372,6 +380,7 @@ function setRange(hours){
   const to = new Date(), from = new Date(to - hours*3600e3);
   document.querySelectorAll('.rng').forEach(b => b.classList.toggle('on', Number(b.dataset.h)===hours));
   $('fromIn').value = toLocalInput(from); $('toIn').value = toLocalInput(to);
+  BASE = { from, to }; ZOOM = { y:null, yv:null }; ZHIST = [];
   loadDetail(from, to);
 }
 document.querySelectorAll('.rng').forEach(b => b.onclick = () => setRange(Number(b.dataset.h)));
@@ -380,6 +389,7 @@ $('customBtn').onclick = () => {
   if (isNaN(from) || isNaN(to) || from >= to) { $('dInfo').textContent = 'Pick a valid From and To time (From must be earlier).'; return; }
   if (to - from > 31*86400e3) { $('dInfo').textContent = 'Pick at most 31 days.'; return; }
   document.querySelectorAll('.rng').forEach(b => b.classList.remove('on'));
+  BASE = { from, to }; ZOOM = { y:null, yv:null }; ZHIST = [];
   loadDetail(from, to);
 };
 function bucketFor(from, to){
@@ -396,7 +406,8 @@ const DATA_COL = { live:'#1f9d55', offline:'#e8890c' };
 const SCN_COL = ['#7c3aed','#0891b2','#d98a00','#1f9d55','#be185d','#2563eb','#65a30d','#475569'];
 const DEFAULT_SEL = { temp1:1,temp2:1,temp3:1,temp4:1,temp5:1, dc1:0,dc2:0,
   di1:1,di2:1,di3:1,di4:1,di5:1, r1:0,r2:0,r3:0,r4:0,r5:0,r6:0,r7:0,r8:0,r9:0, alarms:1, scenario:1, hover:1, sp:1, hys:1, tm:1, dlive:1, doff:1 };
-let SEL = loadSel(), WHEN = loadWhen(), G = null;   // G = data for the graph now on screen
+let SEL = loadSel(), WHEN = loadWhen(), G = null;
+let ZOOM = { y:null, yv:null }, ZHIST = [], BASE = null;   // y zoom, zoom history, range picked with the buttons   // G = data for the graph now on screen
 function loadSel(){ try { return { ...DEFAULT_SEL, ...JSON.parse(localStorage.getItem('iot_sel')||'{}') }; } catch(e){ return { ...DEFAULT_SEL }; } }
 function loadWhen(){ try { return JSON.parse(localStorage.getItem('iot_when')||'{}'); } catch(e){ return {}; } }
 function saveSel(){ try { localStorage.setItem('iot_sel', JSON.stringify(SEL)); localStorage.setItem('iot_when', JSON.stringify(WHEN)); } catch(e){} }
@@ -436,8 +447,10 @@ async function loadDetail(from, to){
     G = { from, to, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows,
           data: dr.rows.map(r => ({ s: new Date(r.s).getTime(), e: new Date(r.e).getTime(), source: r.source, n: r.n, pts: (r.pts||[]).map(v => v*1000) })) };
   } catch(err){ $('dInfo').textContent = 'Error: ' + err.message; return; }
+  $('fromIn').value = toLocalInput(from); $('toIn').value = toLocalInput(to);
   buildPicker();
   drawMain();
+  renderStats();
   renderEvents(G.events);
   if (!G.series.length && !G.runs.length) $('dInfo').textContent += ' · no data in this range';
 }
@@ -539,8 +552,19 @@ const lanePlugin = {
       }
     });
     chart._lanes = lanes;
+    // zoom selection being dragged
+    const d = chart._drag;
+    if (d && d.moved){
+      ctx.fillStyle = 'rgba(37,99,235,.12)'; ctx.strokeStyle = 'rgba(37,99,235,.7)'; ctx.lineWidth = 1; ctx.setLineDash([]);
+      const xa = Math.min(d.x0,d.x1), xb = Math.max(d.x0,d.x1), ya = Math.min(d.y0,d.y1), yb = Math.max(d.y0,d.y1);
+      let r;
+      if (d.mode === 'x') r = [xa, a.top, xb - xa, a.bottom - a.top];
+      else if (d.mode === 'y' || d.mode === 'yv') r = [a.left, ya, a.right - a.left, yb - ya];
+      else r = [xa, ya, xb - xa, yb - ya];
+      ctx.fillRect(...r); ctx.strokeRect(...r);
+    }
     // hover line
-    if (chart._hoverX != null){
+    if (chart._hoverX != null && !(d && d.moved)){
       ctx.strokeStyle = 'rgba(29,35,48,.35)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
       ctx.beginPath(); ctx.moveTo(chart._hoverX, top0); ctx.lineTo(chart._hoverX, a.bottom); ctx.stroke();
     }
@@ -569,8 +593,10 @@ function drawMain(){
       scales:{
         x:{ type:'linear', min:from.getTime(), max:to.getTime(),
             ticks:{ maxTicksLimit:9, callback: v => new Date(v).toLocaleString('en-GB', span > 2*86400e3 ? {day:'2-digit',month:'short'} : {hour:'2-digit',minute:'2-digit'}) } },
-        y:{ position:'left', title:{ display:true, text:'°C' }, afterFit: s => { s.width = Math.max(s.width, 64); } },
-        yv:{ position:'right', display: showV, title:{ display:true, text:'V' }, grid:{ drawOnChartArea:false } },
+        y:{ position:'left', title:{ display:true, text:'°C' }, afterFit: s => { s.width = Math.max(s.width, 64); },
+            ...(ZOOM.y ? { min: ZOOM.y[0], max: ZOOM.y[1] } : {}) },
+        yv:{ position:'right', display: showV, title:{ display:true, text:'V' }, grid:{ drawOnChartArea:false },
+            ...(ZOOM.yv ? { min: ZOOM.yv[0], max: ZOOM.yv[1] } : {}) },
       },
       plugins:{ legend:{ display:false }, tooltip:{ enabled:false } }
     }
@@ -585,12 +611,91 @@ function nearestBucket(t){
   for (const r of G.series){ const d = Math.abs(new Date(r.bucket).getTime() + G.bucket*500 - t); if (d < bd){ bd = d; best = r; } }
   return bd <= G.bucket*1500 ? best : null;
 }
+// share of the window with online data, offline data and no data (by time)
+function renderStats(){
+  if (!G) return;
+  const w0 = G.from.getTime(), w1 = Math.min(G.to.getTime(), Date.now());
+  const total = Math.max(w1 - w0, 1);
+  let on = 0, off = 0, nOn = 0, nOff = 0;
+  const D = G.data || [];
+  D.forEach((d, j) => {
+    const nx = D[j+1];
+    const end = (nx && nx.s - d.e <= 180e3) ? nx.s : d.e + SAMPLE_S*1000;
+    const len = Math.max(0, Math.min(end, w1) - Math.max(d.s, w0));
+    if (d.source === 'offline'){ off += len; nOff += d.n; } else { on += len; nOn += d.n; }
+  });
+  const none = Math.max(0, total - on - off);
+  const pc = v => (100 * v / total).toFixed(1) + '%';
+  const dur = ms => { const m = Math.round(ms/60000); return m < 120 ? m + ' min' : (m/60).toFixed(1) + ' h'; };
+  $('dStats').innerHTML = `<span class="mute">In this window (${fmtT(w0)} to ${fmtT(w1)}):</span>
+    <span class="bar"><i style="width:${100*on/total}%;background:${DATA_COL.live}"></i><i style="width:${100*off/total}%;background:${DATA_COL.offline}"></i></span>
+    <span><span class="sw" style="background:${DATA_COL.live}"></span> Online <b>${pc(on)}</b> <span class="mute">(${dur(on)}, ${nOn.toLocaleString('en-GB')} msgs)</span></span>
+    <span><span class="sw" style="background:${DATA_COL.offline}"></span> Offline <b>${pc(off)}</b> <span class="mute">(${dur(off)}, ${nOff.toLocaleString('en-GB')} msgs)</span></span>
+    <span><span class="sw" style="background:#c9ced8"></span> No data <b>${pc(none)}</b> <span class="mute">(${dur(none)})</span></span>`;
+}
+
+function zoomTo(next){
+  ZHIST.push({ from: G.from, to: G.to, y: ZOOM.y, yv: ZOOM.yv });
+  if (next.y !== undefined) ZOOM.y = next.y;
+  if (next.yv !== undefined) ZOOM.yv = next.yv;
+  if (next.from) loadDetail(next.from, next.to); else drawMain();
+}
+function zoomBack(){
+  const h = ZHIST.pop(); if (!h) return;
+  ZOOM = { y: h.y, yv: h.yv };
+  if (h.from.getTime() !== G.from.getTime() || h.to.getTime() !== G.to.getTime()) loadDetail(h.from, h.to); else drawMain();
+}
+function zoomReset(){
+  if (!BASE) return;
+  ZOOM = { y:null, yv:null }; ZHIST = [];
+  loadDetail(BASE.from, BASE.to);
+}
+$('zoomBack').onclick = zoomBack;
+$('zoomReset').onclick = zoomReset;
+
 function hookHover(chart){
   const cv = chart.canvas, box = $('hoverBox');
-  cv.onmouseleave = () => { chart._hoverX = null; box.classList.add('hidden'); chart.draw(); };
+  cv.onmouseleave = () => { if (chart._drag) finish(); chart._hoverX = null; box.classList.add('hidden'); chart.draw(); };
+  const pos = ev => { const r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
+  cv.onmousedown = (ev) => {
+    if (ev.button !== 0) return;
+    const [mx, my] = pos(ev), a = chart.chartArea;
+    let mode = null;
+    if (mx >= a.left && mx <= a.right && my >= a.top && my <= a.bottom) mode = 'rect';
+    else if (mx >= a.left && mx <= a.right && my > a.bottom) mode = 'x';
+    else if (mx < a.left && my >= a.top && my <= a.bottom) mode = 'y';
+    else if (mx > a.right && my >= a.top && my <= a.bottom && chart.scales.yv.options.display) mode = 'yv';
+    if (!mode) return;
+    ev.preventDefault();
+    chart._drag = { mode, x0: mx, y0: my, x1: mx, y1: my, moved: false };
+    box.classList.add('hidden');
+  };
+  const finish = () => {
+    const d = chart._drag; chart._drag = null;
+    if (!d || !d.moved){ chart.draw(); return; }
+    const a = chart.chartArea, S = chart.scales;
+    const cx = v => Math.max(a.left, Math.min(a.right, v)), cy = v => Math.max(a.top, Math.min(a.bottom, v));
+    const xa = cx(Math.min(d.x0,d.x1)), xb = cx(Math.max(d.x0,d.x1)), ya = cy(Math.min(d.y0,d.y1)), yb = cy(Math.max(d.y0,d.y1));
+    const next = {};
+    if ((d.mode === 'rect' || d.mode === 'x') && xb - xa > 6){
+      const t0 = S.x.getValueForPixel(xa), t1 = S.x.getValueForPixel(xb);
+      if (t1 - t0 >= 60e3){ next.from = new Date(t0); next.to = new Date(t1); }
+    }
+    if ((d.mode === 'rect' || d.mode === 'y') && yb - ya > 6) next.y = [S.y.getValueForPixel(yb), S.y.getValueForPixel(ya)];
+    if ((d.mode === 'rect' || d.mode === 'yv') && yb - ya > 6 && S.yv.options.display) next.yv = [S.yv.getValueForPixel(yb), S.yv.getValueForPixel(ya)];
+    if (Object.keys(next).length){ document.querySelectorAll('.rng').forEach(b => b.classList.remove('on')); zoomTo(next); }
+    else chart.draw();
+  };
+  cv.onmouseup = finish;
+  cv.ondblclick = () => zoomBack();
   cv.onmousemove = (ev) => {
-    const rect = cv.getBoundingClientRect(), mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const [mx, my] = pos(ev);
     const a = chart.chartArea;
+    if (chart._drag){
+      const d = chart._drag; d.x1 = mx; d.y1 = my;
+      if (Math.abs(d.x1-d.x0) > 4 || Math.abs(d.y1-d.y0) > 4) d.moved = true;
+      chart.draw(); return;
+    }
     if (mx < a.left || mx > a.right){ cv.onmouseleave(); return; }
     const t = chart.scales.x.getValueForPixel(mx);
     chart._hoverX = mx; chart.draw();
