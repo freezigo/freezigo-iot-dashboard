@@ -83,6 +83,41 @@
   .hoverbox{position:absolute;pointer-events:none;background:rgba(29,35,48,.95);color:#fff;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;min-width:250px;max-width:340px;z-index:5;white-space:normal}
   .hoverbox .h{font-weight:600;margin-bottom:4px}
   .hoverbox .on{color:#ff8a8a;font-weight:600}
+  .ctl{position:fixed;top:0;right:0;bottom:0;width:380px;background:#fff;border-left:1px solid var(--line);box-shadow:-6px 0 18px rgba(0,0,0,.08);z-index:20;display:flex;flex-direction:column;font-size:13px}
+  body.ctl-open main{margin-right:380px}
+  @media (max-width:1100px){ body.ctl-open main{margin-right:0} }
+  .ctlhead{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .ctlhead button{border:none;font-size:16px}
+  .ctlbody{overflow-y:auto;padding:4px 14px 30px}
+  .ctlsec{border-bottom:1px solid var(--line);padding:10px 0}
+  .ctlsec h3{font-size:13px;margin:0 0 8px;font-weight:600}
+  .ctlgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .ctlgrid button{padding:6px 4px;font-size:12px}
+  .ctlgrid button.cur{outline:2px solid var(--acc)}
+  .ctlgrid button.on{background:#fde2e2;border-color:#d64545;color:#8a1c1c;font-weight:600}
+  .ctl .note{font-size:11px;color:var(--mute);margin-top:6px;line-height:1.4}
+  .ctl .checks label{font-size:12px;margin-right:10px}
+  .tri{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .tri b{width:34px;font-size:12px}
+  .tri .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .tri .seg button{border:none;border-radius:0;padding:2px 9px;font-size:11px}
+  .tri .seg button.sel{background:var(--ink);color:#fff}
+  .tri .seg button.sel.f0{background:#475569}
+  .tri .seg button.sel.f1{background:#d64545}
+  .spgrid{display:grid;grid-template-columns:44px repeat(5,1fr);gap:4px;align-items:center}
+  .spgrid input{width:100%;padding:3px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px}
+  .spgrid input.chg{background:#fff6cc;border-color:#d9a400}
+  .spgrid span{font-size:11px;color:var(--mute)}
+  .ctlmsg{margin:8px 0;padding:8px;border-radius:6px;font-size:12px;display:none}
+  .ctlmsg.show{display:block}
+  .ctlmsg.wait{background:#eef3ff;color:#1e3a8a}
+  .ctlmsg.ok{background:#e7f6ee;color:#14532d}
+  .ctlmsg.bad{background:#fdecec;color:#8a1c1c}
+  .ctlmsg.grey{background:#eef1f6;color:var(--mute)}
+  .live td{padding:2px 6px 2px 0;border:none;font-size:12px;white-space:normal}
+  .live td:first-child{color:var(--mute);width:110px}
+  .ctlhist{max-height:220px;overflow-y:auto;font-size:11px}
+  .ctlhist div{padding:4px 0;border-bottom:1px solid #f0f2f5}
   .tabs button{border:none;background:none;padding:6px 10px;border-bottom:2px solid transparent;border-radius:0}
   .tabs button.on{color:var(--ink);background:none;border-bottom-color:var(--acc);font-weight:600}
 </style>
@@ -116,6 +151,67 @@
   <div id="loginErr" class="err"></div>
 </div>
 
+<aside id="ctl" class="ctl hidden">
+  <div class="ctlhead"><b>Control</b> <span id="ctlImei" class="mute"></span><span class="flex1"></span><button id="ctlClose" title="Close">✕</button></div>
+  <div class="ctlbody">
+    <div class="ctlsec" id="ctlLive"></div>
+    <div id="ctlMsg" class="ctlmsg"></div>
+
+    <div class="ctlsec">
+      <h3>Run for</h3>
+      <div class="row">
+        <select id="ctlFor">
+          <option value="60">1 min</option><option value="300" selected>5 min</option><option value="900">15 min</option>
+          <option value="1800">30 min</option><option value="3600">1 h</option><option value="7200">2 h</option>
+          <option value="14400">4 h</option><option value="28800">8 h</option><option value="86400">24 h</option>
+        </select>
+        <span class="mute">then</span>
+        <select id="ctlThen"><option value="standby" selected>Standby</option><option value="auto">Auto</option></select>
+      </div>
+      <div class="note">Used by Mode, Relays and Overrides. Example: D-cooling, 5 min, then Standby = machine does D-cooling for 5 min, then stops and waits.</div>
+    </div>
+
+    <div class="ctlsec">
+      <h3>Mode</h3>
+      <div class="ctlgrid" id="ctlModes"></div>
+    </div>
+
+    <div class="ctlsec">
+      <h3>Manual relays <span class="mute">(machine goes to Manual)</span></h3>
+      <div class="ctlgrid" id="ctlRelays"></div>
+      <div class="row" style="margin-top:6px"><button class="primary" id="ctlRelaySend">Send relays</button><button id="ctlRelayOff">All off</button></div>
+      <div class="note">Click a relay to switch it on (red) or off. Nothing is sent until you press "Send relays". R1 waits the TM1 delay before it starts.</div>
+    </div>
+
+    <div class="ctlsec">
+      <h3>Overrides</h3>
+      <div id="ctlOvrDi"></div>
+      <div id="ctlOvrT" style="margin-top:6px"></div>
+      <div class="checks" style="margin-top:6px">
+        <label><input type="checkbox" id="ovHitemp"> Ignore high temp</label>
+        <label><input type="checkbox" id="ovLowbat"> Ignore low battery</label>
+        <label><input type="checkbox" id="ovSensor"> Ignore sensor fail</label>
+      </div>
+      <div class="row" style="margin-top:6px"><button class="primary" id="ctlOvrSend">Send overrides</button><button id="ctlOvrClear">Clear all overrides</button></div>
+      <div class="note">Real = machine uses the real input. Off / On = forced. Forcing DI3, DI5 or ignoring a protection switches off machine safety: you will be asked to confirm.</div>
+    </div>
+
+    <div class="ctlsec">
+      <h3>Setpoints <span class="mute">(saved in machine, no timer)</span></h3>
+      <div id="ctlSp"></div>
+      <div class="row" style="margin-top:6px"><button class="primary" id="ctlSpSend">Send changed values</button><button id="ctlSpReset">Undo my changes</button></div>
+      <div class="note">Only boxes you change are sent (they turn yellow). Long changes go as 2 or more commands, one after another.</div>
+      <h3 style="margin-top:12px">Data interval</h3>
+      <div class="row"><input id="ctlInt" type="number" min="30" max="300" step="1" style="width:80px"> <span class="mute">s (30 to 300)</span> <button class="primary" id="ctlIntSend">Send</button></div>
+    </div>
+
+    <div class="ctlsec">
+      <h3>Command history</h3>
+      <div id="ctlHist" class="ctlhist"></div>
+    </div>
+  </div>
+</aside>
+
 <main id="app" class="hidden">
   <!-- ALERTS (B014): machines offline now, and reboots in the last 24 h -->
   <div id="alertBox" class="card alert hidden"></div>
@@ -138,6 +234,7 @@
         <button id="backBtn">← All machines</button>
         <strong id="dTitle"></strong>
         <span id="dStatus"></span>
+        <button id="ctlBtn" class="primary hidden" title="Send commands to this machine">Control ▸</button>
         <span class="flex1"></span>
         <span class="mute">Range</span>
         <button class="rng" data-h="6">6 h</button>
@@ -230,7 +327,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B014 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B015 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -247,7 +344,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B014';
+  var BUILD = 'B015';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -291,6 +388,7 @@ const SECTIONS = [
   ['io','Inputs and relays (di, r)'],
   ['settings','Settings (sp, dp, hys, dcv, tm, scenario)'],
   ['alarms','Alarms'],
+  ['control','Control (send commands to the machine)'],
 ];
 
 const showErp = window.showErp
@@ -467,6 +565,7 @@ async function loadList(){
   $('listUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString('en-GB');
 }
 function showList(){
+  if (CTL) closeCtl();
   current = null;
   history.replaceState(null,'',location.pathname);
   $('accessView').classList.add('hidden'); $('detailView').classList.add('hidden'); $('listView').classList.remove('hidden'); $('crumb').textContent='';
@@ -494,10 +593,11 @@ async function openMachine(imei){
     try {
       machinesCache = (await api('machines')).rows;
       const n = machinesCache.find(m => m.imei === imei);
-      if (n){ current.latest = n; $('dStatus').innerHTML = statusHtml(n) + ` <span class="mute">· last message ${ago(n.received_at)}</span>`; renderLatest(n); }
+      if (n){ current.latest = n; $('dStatus').innerHTML = statusHtml(n) + ` <span class="mute">· last message ${ago(n.received_at)}</span>`; renderLatest(n); ctlButtonUpdate(); }
     } catch(e){}
   }, LIST_REFRESH_MS);
   renderLatest(r);
+  ctlButtonUpdate();
   setRange(24);
 }
 function setRange(hours){
@@ -965,6 +1065,218 @@ function renderEvents(ev){
     if (has('settings')) t += `<td>${esc(e.scenario)}</td><td>${esc((e.sp||[]).join(', '))}</td>`;
     return `<tr>${t}</tr>`;
   }).join('') : `<tr><td colspan="${cols.length}" class="mute">No data in this range.</td></tr>`;
+}
+
+// ===================== Control panel (B015) =====================
+const MODES = [['auto','Auto'],['charging','Charging'],['thermal_cooling','Thermal cooling'],['d_cooling','D-cooling'],['defrost','Defrost'],['standby','Standby']];
+const RELAY_NAMES = { 1:'R1 Compressor', 9:'R9 12 V out' };
+const SP_FIELDS = [
+  ['SP', ['sp1','sp2','sp3','sp4','sp5'], 'sp'],
+  ['DP', ['dp1','dp2','dp3','dp4','dp5'], 'dp'],
+  ['HYS', ['hys1','hys2','hys3','hys4','hys5'], 'hys'],
+  ['DCV', ['dcv1','dcv2'], 'dcv'],
+  ['Timers', ['tm1','dt2','dt4','dt5'], 'tm'],        // telemetry tm = [tm1, dt2, dt4, dt5]
+];
+const SP_LIM = { sp1:[-40,90],sp2:[-40,90],sp3:[-40,90],sp4:[-40,90],sp5:[-40,150], dp1:[0.1,30],dp2:[0.1,30],dp3:[0.1,30],dp4:[0.1,30],dp5:[0.1,60],
+  hys1:[-10,10],hys2:[-10,10],hys3:[-10,10],hys4:[-10,10],hys5:[-10,10], dcv1:[0,100],dcv2:[20,100], tm1:[0,3600],dt2:[1,3600],dt4:[0,3600],dt5:[1,3600] };
+const PROTECT_DI = [3,5];   // DI3 voltage OK, DI5 pressure OK
+let CTL = null;             // { imei, st:{...live state}, base: ms when 'left' was read, busy, relays, di, t, sp:{orig, cur} }
+
+function canCtl(r){ return !!(ME && ME.can_control && r && r.rmode); }
+function ctlButtonUpdate(){
+  const r = current && current.latest;
+  $('ctlBtn').classList.toggle('hidden', !canCtl(r));
+  if (CTL && r && CTL.imei === r.imei) ctlFromRecord(r);
+}
+$('ctlBtn').onclick = () => openCtl();
+$('ctlClose').onclick = () => closeCtl();
+
+function stateFromRecord(r){
+  return { rm: r.rmode, mr: r.manual_relays || '000000000', dio: r.di_ovr || 'nnnnn', tso: r.t_ovr || 'nnnnn', isb: r.iss_byp || 0,
+           int: r.interval_s, up: r.uptime_s, left: r.hold_left_s || 0, then: r.hold_then || 'auto', scenario: r.scenario,
+           relaysNow: [1,2,3,4,5,6,7,8,9].map(n => r['r'+n]), at: new Date(r.received_at).getTime(),
+           sp: r.sp, dp: r.dp, hys: r.hys, dcv: r.dcv, tm: r.tm };
+}
+function ctlFromRecord(r){
+  const s = stateFromRecord(r);
+  // a newer ack wins over an older record
+  if (CTL.st && CTL.st.at > s.at) return;
+  CTL.st = { ...CTL.st, ...s };
+  renderLive();
+}
+function openCtl(){
+  const r = current && current.latest; if (!canCtl(r)) return;
+  CTL = { imei: r.imei, st: null, busy: false };
+  CTL.st = stateFromRecord(r);
+  CTL.relays = CTL.st.mr.split('').map(c => c === '1');
+  CTL.di = CTL.st.dio.split(''); CTL.t = CTL.st.tso.split('');
+  $('ctlImei').textContent = r.imei;
+  document.body.classList.add('ctl-open'); $('ctl').classList.remove('hidden');
+  buildCtl(); renderLive(); loadHist(); ctlMsg('', '');
+  setTimeout(() => { if (charts.main) { charts.main.resize(); renderScroll(); } }, 50);
+}
+function closeCtl(){
+  CTL = null; document.body.classList.remove('ctl-open'); $('ctl').classList.add('hidden');
+  setTimeout(() => { if (charts.main) { charts.main.resize(); renderScroll(); } }, 50);
+}
+
+function fmtLeft(s){ s = Math.max(0, Math.round(s)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return (h? h+' h ':'') + (h||m ? m+' min ':'') + x+' s'; }
+function renderLive(){
+  if (!CTL || !CTL.st) return;
+  const s = CTL.st;
+  const left = Math.max(0, s.left - (Date.now() - s.at)/1000);
+  const modeName = (MODES.find(m => m[0] === s.rm) || [s.rm, s.rm === 'manual' ? 'Manual' : s.rm])[1];
+  const ovrTxt = v => v.split('').map((c,i) => c==='n' ? '' : `${i+1}:${c==='1'?'ON':'OFF'}`).filter(Boolean).join(' ') || 'none';
+  const isb = [s.isb & 1 ? 'high temp' : '', s.isb & 2 ? 'low battery' : '', s.isb & 4 ? 'sensor fail' : ''].filter(Boolean).join(', ') || 'none';
+  $('ctlLive').innerHTML = `<h3>Machine now</h3><table class="live">
+    <tr><td>Mode</td><td><b>${esc(modeName)}</b> ${s.scenario ? `<span class="mute">(doing: ${esc(s.scenario)})</span>` : ''}</td></tr>
+    <tr><td>Timer</td><td>${left > 0 ? `<b id="ctlLeft">${fmtLeft(left)}</b> left, then <b>${esc(s.then)}</b> <button id="ctlKeep" class="tg" style="margin-left:4px">Keep going</button>` : '<span class="mute">no timer</span>'}</td></tr>
+    ${s.rm === 'manual' ? `<tr><td>Manual relays</td><td>${s.mr.split('').map((c,i)=> c==='1' ? 'R'+(i+1) : '').filter(Boolean).join(', ') || 'all off'}</td></tr>` : ''}
+    <tr><td>Relays now</td><td>${(s.relaysNow||[]).map((v,i)=> v ? 'R'+(i+1) : '').filter(Boolean).join(', ') || 'all off'}</td></tr>
+    <tr><td>DI overrides</td><td>${ovrTxt(s.dio)}</td></tr>
+    <tr><td>T overrides</td><td>${ovrTxt(s.tso)}</td></tr>
+    <tr><td>Ignored issues</td><td>${isb}</td></tr>
+    <tr><td>Data interval</td><td>${s.int ?? '–'} s · running for <span id="ctlUp">${s.up != null ? fmtLeft(s.up + (Date.now()-s.at)/1000) : '–'}</span></td></tr>
+  </table>`;
+  const k = $('ctlKeep');
+  if (k){ k.disabled = CTL.busy; k.onclick = () => sendCmd({ c:'status', for: forSec() }, `Keep going for ${$('ctlFor').selectedOptions[0].text}`); }
+  document.querySelectorAll('#ctlModes button').forEach(b => b.classList.toggle('cur', b.dataset.m === s.rm));
+}
+// tick the countdown and uptime every second without rebuilding the buttons
+setInterval(() => {
+  if (!CTL || !CTL.st || document.hidden) return;
+  const s = CTL.st, el = $('ctlLeft'), up = $('ctlUp');
+  const left = s.left - (Date.now() - s.at)/1000;
+  if (el){ if (left <= 0) renderLive(); else el.textContent = fmtLeft(left); }
+  if (up && s.up != null) up.textContent = fmtLeft(s.up + (Date.now()-s.at)/1000);
+}, 1000);
+
+const forSec = () => Number($('ctlFor').value);
+const thenVal = () => $('ctlThen').value;
+
+function buildCtl(){
+  // modes
+  $('ctlModes').innerHTML = MODES.map(([k,l]) => `<button data-m="${k}">${l}</button>`).join('');
+  $('ctlModes').querySelectorAll('button').forEach(b => b.onclick = () => {
+    const label = b.textContent;
+    const cmd = b.dataset.m === 'auto' ? { c:'mode', v:'auto' } : { c:'mode', v:b.dataset.m, for:forSec(), then:thenVal() };
+    sendCmd(cmd, b.dataset.m === 'auto' ? 'Mode Auto' : `${label} for ${$('ctlFor').selectedOptions[0].text}, then ${thenVal()}`);
+  });
+  // relays
+  const drawRelays = () => {
+    $('ctlRelays').innerHTML = CTL.relays.map((on,i) => `<button data-i="${i}" class="${on?'on':''}">${RELAY_NAMES[i+1] || 'R'+(i+1)}</button>`).join('');
+    $('ctlRelays').querySelectorAll('button').forEach(b => b.onclick = () => { CTL.relays[b.dataset.i] = !CTL.relays[b.dataset.i]; drawRelays(); });
+  };
+  drawRelays();
+  $('ctlRelayOff').onclick = () => { CTL.relays = CTL.relays.map(() => false); drawRelays(); };
+  $('ctlRelaySend').onclick = () => {
+    const r = CTL.relays.map(v => v ? '1' : '0').join('');
+    const on = r.split('').map((c,i)=> c==='1' ? 'R'+(i+1) : '').filter(Boolean).join(', ') || 'all off';
+    sendCmd({ c:'relay', r, for:forSec(), then:thenVal() }, `Manual relays: ${on} for ${$('ctlFor').selectedOptions[0].text}, then ${thenVal()}`);
+  };
+  // overrides
+  const tri = (arr, prefix, i) => `<div class="tri"><b>${prefix}${i+1}</b><span class="seg">${[['n','Real'],['0','Off'],['1','On']].map(([v,l]) =>
+      `<button data-a="${prefix}" data-i="${i}" data-v="${v}" class="${arr[i]===v?'sel':''} f${v}">${l}</button>`).join('')}</span>${prefix==='DI' && PROTECT_DI.includes(i+1) ? ' <span class="mute" style="font-size:11px">protection</span>' : ''}</div>`;
+  const drawOvr = () => {
+    $('ctlOvrDi').innerHTML = '<div class="mute" style="font-size:11px">Digital inputs</div>' + CTL.di.map((_,i) => tri(CTL.di,'DI',i)).join('');
+    $('ctlOvrT').innerHTML = '<div class="mute" style="font-size:11px">Temperature conditions</div>' + CTL.t.map((_,i) => tri(CTL.t,'T',i)).join('');
+    document.querySelectorAll('#ctl .tri button').forEach(b => b.onclick = () => { (b.dataset.a==='DI' ? CTL.di : CTL.t)[b.dataset.i] = b.dataset.v; drawOvr(); });
+  };
+  drawOvr();
+  $('ovHitemp').checked = !!(CTL.st.isb & 1); $('ovLowbat').checked = !!(CTL.st.isb & 2); $('ovSensor').checked = !!(CTL.st.isb & 4);
+  $('ctlOvrSend').onclick = () => {
+    const di = CTL.di.join(''), t = CTL.t.join('');
+    const risky = [];
+    PROTECT_DI.forEach(n => { if (di[n-1] !== 'n') risky.push(`DI${n} forced ${di[n-1]==='1'?'ON':'OFF'}`); });
+    if ($('ovHitemp').checked) risky.push('high temp ignored');
+    if ($('ovLowbat').checked) risky.push('low battery ignored');
+    if ($('ovSensor').checked) risky.push('sensor fail ignored');
+    if (risky.length && !confirm('This switches off machine protection:\n- ' + risky.join('\n- ') + '\n\nThe machine can run without its safety checks for ' + $('ctlFor').selectedOptions[0].text + '. Are you sure?')) return;
+    sendCmd({ c:'ovr', di, t, hitemp: $('ovHitemp').checked?1:0, lowbat: $('ovLowbat').checked?1:0, sensor: $('ovSensor').checked?1:0, for:forSec(), then:thenVal() },
+      `Overrides DI ${di}, T ${t}${risky.length ? ' (' + risky.join(', ') + ')' : ''}`);
+  };
+  $('ctlOvrClear').onclick = () => sendCmd({ c:'ovr', clear:1 }, 'Clear all overrides');
+  // setpoints
+  const cur = {}; SP_FIELDS.forEach(([,keys,src]) => keys.forEach((k,i) => { const a = CTL.st[src]; cur[k] = a && a[i] != null ? Number(a[i]) : null; }));
+  CTL.spOrig = { ...cur };
+  $('ctlSp').innerHTML = SP_FIELDS.map(([lab,keys]) => `<div class="spgrid" style="margin-bottom:4px"><span>${lab}</span>${keys.map(k =>
+      `<label style="display:block"><span>${k}</span><input type="number" step="0.1" data-k="${k}" value="${cur[k] ?? ''}" title="${k}: ${SP_LIM[k][0]} to ${SP_LIM[k][1]}"></label>`).join('')}</div>`).join('') +
+    '<div class="note">Limits: SP1–SP4 −40 to 90, SP5 −40 to 150, DP1–DP4 0.1 to 30, DP5 0.1 to 60, HYS −10 to 10, DCV1 0–100, DCV2 20–100, tm1/dt4 0–3600 s, dt2/dt5 1–3600 s.</div>';
+  $('ctlSp').querySelectorAll('input').forEach(i => i.oninput = () => i.classList.toggle('chg', i.value !== '' && Number(i.value) !== CTL.spOrig[i.dataset.k]));
+  $('ctlSpReset').onclick = () => $('ctlSp').querySelectorAll('input').forEach(i => { i.value = CTL.spOrig[i.dataset.k] ?? ''; i.classList.remove('chg'); });
+  $('ctlSpSend').onclick = async () => {
+    const ch = {};
+    for (const i of $('ctlSp').querySelectorAll('input.chg')){
+      const k = i.dataset.k, v = Math.round(Number(i.value)*10)/10, [lo,hi] = SP_LIM[k];
+      if (!Number.isFinite(v) || v < lo || v > hi){ ctlMsg('bad', `${k} must be from ${lo} to ${hi}.`); i.focus(); return; }
+      ch[k] = v;
+    }
+    const keys = Object.keys(ch); if (!keys.length){ ctlMsg('grey', 'No value changed.'); return; }
+    // split into commands of max ~120 characters
+    const parts = []; let cur = { c:'sp' };
+    for (const k of keys){ const t = { ...cur, [k]: ch[k] }; if (JSON.stringify(t).length > 120 && Object.keys(cur).length > 1){ parts.push(cur); cur = { c:'sp', [k]: ch[k] }; } else cur = t; }
+    parts.push(cur);
+    for (let n = 0; n < parts.length; n++){
+      const ok = await sendCmd(parts[n], `Setpoints ${parts.length > 1 ? `(${n+1} of ${parts.length}) ` : ''}${Object.keys(parts[n]).filter(k=>k!=='c').map(k=>k+'='+parts[n][k]).join(', ')}`);
+      if (!ok) return;
+      Object.keys(parts[n]).forEach(k => { if (k !== 'c') CTL.spOrig[k] = parts[n][k]; });
+      $('ctlSp').querySelectorAll('input').forEach(i => { if (i.dataset.k in parts[n]) i.classList.remove('chg'); });
+    }
+  };
+  $('ctlInt').value = CTL.st.int ?? 30;
+  $('ctlIntSend').onclick = () => {
+    const v = Number($('ctlInt').value);
+    if (!Number.isInteger(v) || v < 30 || v > 300){ ctlMsg('bad', 'Interval must be a whole number from 30 to 300 s.'); return; }
+    sendCmd({ c:'interval', sec:v }, `Data interval ${v} s`);
+  };
+}
+
+function ctlMsg(kind, text){ const m = $('ctlMsg'); m.className = 'ctlmsg' + (kind ? ' show ' + kind : ''); m.innerHTML = text; }
+function setBusy(b){ if (!CTL) return; CTL.busy = b; document.querySelectorAll('#ctl .ctlbody button').forEach(x => { if (!x.closest('.tri') && !x.closest('#ctlRelays')) x.disabled = b; }); }
+
+// send one command and follow it to done / failed. Returns true when done.
+async function sendCmd(cmd, label){
+  if (!CTL || CTL.busy) return false;
+  const imei = CTL.imei;
+  setBusy(true); ctlMsg('wait', `⏳ ${esc(label)}: sending…`);
+  let id;
+  try { id = (await api('cmd_send', { imei, cmd })).command.id; }
+  catch(e){ setBusy(false); ctlMsg('bad', `✕ ${esc(label)}: ${esc(e.message)}`); return false; }
+  const t0 = Date.now();
+  while (CTL && CTL.imei === imei){
+    await new Promise(r => setTimeout(r, 1500));
+    let c; try { c = (await api('cmd_get', { imei, id })).command; } catch(e){ continue; }
+    if (c.status === 'queued') ctlMsg('wait', `⏳ ${esc(label)}: waiting for machine${Date.now()-t0 > 20000 ? ' (it may be offline; it will go when the machine is back)' : ''}…`);
+    else if (c.status === 'sent') ctlMsg('wait', `⏳ ${esc(label)}: sent, waiting for reply${c.attempts > 1 ? ` (try ${c.attempts} of 5)` : ''}…`);
+    else if (c.status === 'done'){
+      ctlMsg('ok', `✓ ${esc(label)}: done${c.error ? ` (${esc(c.error)})` : ''}`);
+      applyAck(c.ack); setBusy(false); loadHist(); return true;
+    }
+    else if (c.status === 'failed'){ ctlMsg('bad', `✕ ${esc(label)}: ${esc(c.error || 'failed')}`); setBusy(false); loadHist(); return false; }
+    else if (c.status === 'superseded'){ ctlMsg('grey', `${esc(label)}: replaced by a newer command`); setBusy(false); loadHist(); return false; }
+    if (Date.now() - t0 > 60000 && c.status === 'queued'){       // machine offline: free the panel, the command stays queued
+      ctlMsg('wait', `⏳ ${esc(label)}: still waiting for the machine. It will go when the machine is online. A new command will replace it.`);
+      setBusy(false); loadHist(); return false;
+    }
+  }
+  return false;
+}
+function applyAck(a){
+  if (!CTL || !a) return;
+  const s = CTL.st;
+  if (a.rm != null) s.rm = a.rm; if (a.mr != null) s.mr = a.mr; if (a.dio != null) s.dio = a.dio; if (a.tso != null) s.tso = a.tso;
+  if (a.isb != null) s.isb = a.isb; if (a.int != null) s.int = a.int; if (a.up != null) s.up = a.up;
+  if (a.left != null) s.left = a.left; if (a.then != null) s.then = a.then;
+  s.at = Date.now();
+  renderLive();
+}
+async function loadHist(){
+  if (!CTL) return;
+  try {
+    const rows = (await api('cmd_list', { imei: CTL.imei, limit: 15 })).rows;
+    const col = { done:'var(--ok)', failed:'var(--bad)', queued:'#2563eb', sent:'#2563eb', superseded:'var(--mute)' };
+    $('ctlHist').innerHTML = rows.length ? rows.map(c => `<div><b style="color:${col[c.status]||'inherit'}">${esc(c.status)}</b> · ${fmtTs(c.created_at)} · ${esc((c.created_by||'').split('@')[0])}<br><code>${esc(JSON.stringify(c.cmd))}</code>${c.error ? ` <span class="err">${esc(c.error)}</span>` : ''}</div>`).join('') : '<span class="mute">No commands yet.</span>';
+  } catch(e){ $('ctlHist').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
 }
 
 function renderLatest(r){
