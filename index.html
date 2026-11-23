@@ -86,6 +86,24 @@
   .ctl{position:fixed;top:0;right:0;bottom:0;width:380px;background:#fff;border-left:1px solid var(--line);box-shadow:-6px 0 18px rgba(0,0,0,.08);z-index:20;display:flex;flex-direction:column;font-size:13px}
   body.ctl-open main{margin-right:380px}
   @media (max-width:1100px){ body.ctl-open main{margin-right:0} }
+  .ctl.full{width:100%;left:0}
+  body.ctl-open.ctl-full main{display:none}
+  .ctl .ctlbody{display:block}
+  .ctl.full .ctlbody{display:grid;grid-template-columns:minmax(360px,460px) 1fr;gap:24px}
+  .ctl.full .ctlcol:last-child{border-left:1px solid var(--line);padding-left:20px}
+  .namegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px}
+  .namegrid input{margin:0 !important;font-size:12px;padding:5px !important}
+  .namegrid span{font-size:11px;color:var(--mute)}
+  .lstep{display:flex;gap:6px;align-items:center;padding:5px 6px;border:1px solid var(--line);border-radius:6px;margin-bottom:4px;font-size:12px;background:#fafbfc}
+  .lstep .n{font-weight:600;color:var(--mute);width:16px}
+  .lstep .t{flex:1}
+  .lstep select{font-size:11px}
+  .lstep button{padding:1px 6px;font-size:11px}
+  .pred{font-size:12px;line-height:1.5}
+  .pred .ev{display:flex;gap:8px;padding:4px 0;border-bottom:1px dashed #e7e9ee}
+  .pred .tm{width:70px;color:var(--mute);flex:none}
+  .pred .warn{color:#8a1c1c;font-weight:600}
+  .pred .okk{color:#14532d}
   .ctlhead{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line)}
   .ctlhead button{border:none;font-size:16px}
   .ctlbody{overflow-y:auto;padding:4px 14px 30px}
@@ -152,8 +170,9 @@
 </div>
 
 <aside id="ctl" class="ctl hidden">
-  <div class="ctlhead"><b>Control</b> <span id="ctlImei" class="mute"></span><span class="flex1"></span><button id="ctlClose" title="Close">✕</button></div>
+  <div class="ctlhead"><b>Control</b> <span id="ctlImei" class="mute"></span><span class="flex1"></span><button id="ctlFull" title="Full screen with prediction">⛶ Full screen</button><button id="ctlClose" title="Close">✕</button></div>
   <div class="ctlbody">
+   <div class="ctlcol">
     <div class="ctlsec" id="ctlLive"></div>
     <div id="ctlMsg" class="ctlmsg"></div>
 
@@ -174,12 +193,13 @@
     <div class="ctlsec">
       <h3>Mode</h3>
       <div class="ctlgrid" id="ctlModes"></div>
+      <div class="note">Click = send now. <b>+</b> = add to the command line instead.</div>
     </div>
 
     <div class="ctlsec">
       <h3>Manual relays <span class="mute">(machine goes to Manual)</span></h3>
       <div class="ctlgrid" id="ctlRelays"></div>
-      <div class="row" style="margin-top:6px"><button class="primary" id="ctlRelaySend">Send relays</button><button id="ctlRelayOff">All off</button></div>
+      <div class="row" style="margin-top:6px"><button class="primary" id="ctlRelaySend">Send relays</button><button id="ctlRelayLine">+ Line</button><button id="ctlRelayOff">All off</button></div>
       <div class="note">Click a relay to switch it on (red) or off. Nothing is sent until you press "Send relays". R1 waits the TM1 delay before it starts.</div>
     </div>
 
@@ -192,23 +212,55 @@
         <label><input type="checkbox" id="ovLowbat"> Ignore low battery</label>
         <label><input type="checkbox" id="ovSensor"> Ignore sensor fail</label>
       </div>
-      <div class="row" style="margin-top:6px"><button class="primary" id="ctlOvrSend">Send overrides</button><button id="ctlOvrClear">Clear all overrides</button></div>
+      <div class="row" style="margin-top:6px"><button class="primary" id="ctlOvrSend">Send overrides</button><button id="ctlOvrLine">+ Line</button><button id="ctlOvrClear">Clear all overrides</button></div>
       <div class="note">Real = machine uses the real input. Off / On = forced. Forcing DI3, DI5 or ignoring a protection switches off machine safety: you will be asked to confirm.</div>
     </div>
 
     <div class="ctlsec">
       <h3>Setpoints <span class="mute">(saved in machine, no timer)</span></h3>
       <div id="ctlSp"></div>
-      <div class="row" style="margin-top:6px"><button class="primary" id="ctlSpSend">Send changed values</button><button id="ctlSpReset">Undo my changes</button></div>
+      <div class="row" style="margin-top:6px"><button class="primary" id="ctlSpSend">Send changed values</button><button id="ctlSpLine">+ Line</button><button id="ctlSpReset">Undo my changes</button></div>
       <div class="note">Only boxes you change are sent (they turn yellow). Long changes go as 2 or more commands, one after another.</div>
       <h3 style="margin-top:12px">Data interval</h3>
       <div class="row"><input id="ctlInt" type="number" min="30" max="300" step="1" style="width:80px"> <span class="mute">s (30 to 300)</span> <button class="primary" id="ctlIntSend">Send</button></div>
     </div>
 
     <div class="ctlsec">
+      <h3>Send as a group <span class="mute">(uses the choices above)</span></h3>
+      <div class="row" style="margin-bottom:6px">
+        <button class="primary" id="grpRelay">Relays + DI + T</button><button id="grpRelayLine">+ Line</button>
+      </div>
+      <div class="row">
+        <select id="grpMode"></select>
+        <button class="primary" id="grpMode1">Mode + DI + T</button><button id="grpModeLine">+ Line</button>
+      </div>
+      <div class="note">Sends the overrides first, then the relays or the mode, one after the other, with one click. Example: DI5 = On, T3 = Off, mode D-cooling, 5 min, then Standby.</div>
+    </div>
+
+   </div>
+   <div class="ctlcol">
+    <div class="ctlsec">
+      <h3>Command line <span class="mute">(runs one after the other on the server; the browser can be closed)</span></h3>
+      <div id="ctlLine"></div>
+      <div class="row" style="margin-top:6px">
+        <span class="mute">At the end:</span>
+        <select id="ctlEnd"><option value="standby" selected>Standby</option><option value="auto">Auto</option></select>
+        <span class="flex1"></span>
+        <button id="ctlLineClear">Clear</button>
+        <button class="primary" id="ctlLineRun">Run line</button>
+      </div>
+      <div class="note">Add steps with the "+ Line" buttons. For each step choose when the next step starts: "right away" (after the machine confirms) or "after 30 min" etc. Example: Charging → after 30 min → D-cooling → after 1 h → end: Standby.</div>
+      <div id="ctlProg" style="margin-top:8px"></div>
+    </div>
+    <div class="ctlsec">
+      <h3>What will happen</h3>
+      <div id="ctlPred" class="pred"></div>
+    </div>
+    <div class="ctlsec">
       <h3>Command history</h3>
       <div id="ctlHist" class="ctlhist"></div>
     </div>
+   </div>
   </div>
 </aside>
 
@@ -317,17 +369,38 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Machine names</h2>
-      <p class="mute" style="margin-top:0">Give each controller a name and machine serial number, e.g. Label "Prompt van 1", Serial "FZ-RF-0012". These show in the machine list.</p>
-      <div class="scroll"><table>
-        <thead><tr><th>IMEI</th><th>Label</th><th>Serial no.</th><th>Last seen</th><th></th></tr></thead>
-        <tbody id="deviceRows"></tbody>
-      </table></div>
+    <div class="grid">
+      <div class="card">
+        <div class="row" style="margin-bottom:10px"><h2 style="margin:0">Machines (by serial number)</h2><span class="flex1"></span><button id="mNew" class="primary">+ Add machine</button></div>
+        <p class="mute" style="margin-top:0">The serial number stays with the machine. If the modem (IMEI) is changed, link the new IMEI: the history stays with the serial.</p>
+        <div class="scroll"><table>
+          <thead><tr><th>Serial no.</th><th>Name</th><th>IMEI now</th><th>Logic</th></tr></thead>
+          <tbody id="mRows"></tbody>
+        </table></div>
+        <div id="mFree" class="mute" style="margin-top:8px;font-size:12px"></div>
+      </div>
+      <div class="card form" id="mForm">
+        <h2 id="mTitle">Add machine</h2>
+        <label>Serial number</label><input id="mSerial" type="text" placeholder="e.g. FZ-RF-0012">
+        <label>Name</label><input id="mLabel" type="text" placeholder="e.g. Prompt van 1">
+        <label>Logic version (which firmware logic this machine runs)</label><input id="mLogic" type="text" placeholder="e.g. V2.0-P2C4">
+        <label>Relay names</label><div id="mRelays" class="namegrid"></div>
+        <label>Digital input names</label><div id="mDis" class="namegrid"></div>
+        <label>Temperature sensor names</label><div id="mTs" class="namegrid"></div>
+        <label>Notes</label><input id="mNotes" type="text" placeholder="e.g. Bada Dost i5 reefer, installed Nov 2026">
+        <div class="row"><button id="mSave" class="primary">Save machine</button></div>
+        <div id="mMsg" class="err"></div>
+        <div id="mLinkBox" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+          <label>Modem (IMEI) of this machine</label>
+          <div class="row"><select id="mImei" style="min-width:260px"></select><button id="mLink">Link</button><button id="mUnlink" class="danger">Unlink</button></div>
+          <div class="note" style="font-size:12px;color:var(--mute);margin-top:4px">Example: modem of FZ-RF-0012 was replaced → pick the new IMEI → Link. Old data stays under the old IMEI and is shown in the history below.</div>
+          <div id="mHist" style="margin-top:8px;font-size:12px"></div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B015 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B016 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -344,7 +417,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B015';
+  var BUILD = 'B016';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -597,6 +670,8 @@ async function openMachine(imei){
     } catch(e){}
   }, LIST_REFRESH_MS);
   renderLatest(r);
+  MCFG = null;
+  api('machine_cfg', { imei }).then(c => { MCFG = c; if (c.serial) $('dTitle').textContent = c.serial + ' · ' + imei + (c.machine && c.machine.label ? ' · ' + c.machine.label : ''); }).catch(() => {});
   ctlButtonUpdate();
   setRange(24);
 }
@@ -1080,7 +1155,11 @@ const SP_FIELDS = [
 const SP_LIM = { sp1:[-40,90],sp2:[-40,90],sp3:[-40,90],sp4:[-40,90],sp5:[-40,150], dp1:[0.1,30],dp2:[0.1,30],dp3:[0.1,30],dp4:[0.1,30],dp5:[0.1,60],
   hys1:[-10,10],hys2:[-10,10],hys3:[-10,10],hys4:[-10,10],hys5:[-10,10], dcv1:[0,100],dcv2:[20,100], tm1:[0,3600],dt2:[1,3600],dt4:[0,3600],dt5:[1,3600] };
 const PROTECT_DI = [3,5];   // DI3 voltage OK, DI5 pressure OK
-let CTL = null;             // { imei, st:{...live state}, base: ms when 'left' was read, busy, relays, di, t, sp:{orig, cur} }
+let CTL = null;
+let MCFG = null;            // { serial, machine:{relay_names, di_names, t_names, logic_version, label} } of the open machine
+const rName = i => { const n = MCFG?.machine?.relay_names?.[i-1]; return n ? `R${i} ${n}` : (RELAY_NAMES[i] || 'R'+i); };
+const diName = i => { const n = MCFG?.machine?.di_names?.[i-1]; return n ? `DI${i} ${n}` : 'DI'+i; };
+const tName = i => { const n = MCFG?.machine?.t_names?.[i-1]; return n ? `T${i} ${n}` : 'T'+i; };             // { imei, st:{...live state}, base: ms when 'left' was read, busy, relays, di, t, sp:{orig, cur} }
 
 function canCtl(r){ return !!(ME && ME.can_control && r && r.rmode); }
 function ctlButtonUpdate(){
@@ -1090,6 +1169,12 @@ function ctlButtonUpdate(){
 }
 $('ctlBtn').onclick = () => openCtl();
 $('ctlClose').onclick = () => closeCtl();
+$('ctlFull').onclick = () => {
+  const on = !$('ctl').classList.contains('full');
+  $('ctl').classList.toggle('full', on); document.body.classList.toggle('ctl-full', on);
+  $('ctlFull').textContent = on ? '⇥ Side panel' : '⛶ Full screen';
+  if (!on) setTimeout(() => { if (charts.main) { charts.main.resize(); renderScroll(); } }, 50);
+};
 
 function stateFromRecord(r){
   return { rm: r.rmode, mr: r.manual_relays || '000000000', dio: r.di_ovr || 'nnnnn', tso: r.t_ovr || 'nnnnn', isb: r.iss_byp || 0,
@@ -1110,13 +1195,17 @@ function openCtl(){
   CTL.st = stateFromRecord(r);
   CTL.relays = CTL.st.mr.split('').map(c => c === '1');
   CTL.di = CTL.st.dio.split(''); CTL.t = CTL.st.tso.split('');
-  $('ctlImei').textContent = r.imei;
+  $('ctlImei').textContent = (MCFG && MCFG.serial ? MCFG.serial + ' · ' : '') + r.imei;
+  CTL.line = [];
   document.body.classList.add('ctl-open'); $('ctl').classList.remove('hidden');
-  buildCtl(); renderLive(); loadHist(); ctlMsg('', '');
+  buildCtl(); renderLive(); loadHist(); ctlMsg('', ''); renderLine(); loadProg();
+  clearInterval(CTL_PROG_T); CTL_PROG_T = setInterval(() => { if (CTL) { loadProg(); } }, 5000);
   setTimeout(() => { if (charts.main) { charts.main.resize(); renderScroll(); } }, 50);
 }
+let CTL_PROG_T = null;
 function closeCtl(){
-  CTL = null; document.body.classList.remove('ctl-open'); $('ctl').classList.add('hidden');
+  clearInterval(CTL_PROG_T);
+  CTL = null; document.body.classList.remove('ctl-open', 'ctl-full'); $('ctl').classList.add('hidden'); $('ctl').classList.remove('full');
   setTimeout(() => { if (charts.main) { charts.main.resize(); renderScroll(); } }, 50);
 }
 
@@ -1141,6 +1230,7 @@ function renderLive(){
   const k = $('ctlKeep');
   if (k){ k.disabled = CTL.busy; k.onclick = () => sendCmd({ c:'status', for: forSec() }, `Keep going for ${$('ctlFor').selectedOptions[0].text}`); }
   document.querySelectorAll('#ctlModes button').forEach(b => b.classList.toggle('cur', b.dataset.m === s.rm));
+  renderPred();
 }
 // tick the countdown and uptime every second without rebuilding the buttons
 setInterval(() => {
@@ -1156,15 +1246,17 @@ const thenVal = () => $('ctlThen').value;
 
 function buildCtl(){
   // modes
-  $('ctlModes').innerHTML = MODES.map(([k,l]) => `<button data-m="${k}">${l}</button>`).join('');
-  $('ctlModes').querySelectorAll('button').forEach(b => b.onclick = () => {
+  $('ctlModes').innerHTML = MODES.map(([k,l]) => `<span style="display:flex;gap:2px"><button data-m="${k}" style="flex:1">${l}</button><button data-ml="${k}" title="Add to command line" style="padding:6px 6px">+</button></span>`).join('');
+  $('ctlModes').querySelectorAll('button[data-ml]').forEach(b => b.onclick = () => addLine(modeCmd(b.dataset.ml), modeLabel(b.dataset.ml)));
+  $('grpMode').innerHTML = MODES.filter(m => m[0] !== 'auto').map(([k,l]) => `<option value="${k}">${l}</option>`).join('');
+  $('ctlModes').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => {
     const label = b.textContent;
     const cmd = b.dataset.m === 'auto' ? { c:'mode', v:'auto' } : { c:'mode', v:b.dataset.m, for:forSec(), then:thenVal() };
     sendCmd(cmd, b.dataset.m === 'auto' ? 'Mode Auto' : `${label} for ${$('ctlFor').selectedOptions[0].text}, then ${thenVal()}`);
   });
   // relays
   const drawRelays = () => {
-    $('ctlRelays').innerHTML = CTL.relays.map((on,i) => `<button data-i="${i}" class="${on?'on':''}">${RELAY_NAMES[i+1] || 'R'+(i+1)}</button>`).join('');
+    $('ctlRelays').innerHTML = CTL.relays.map((on,i) => `<button data-i="${i}" class="${on?'on':''}">${esc(rName(i+1))}</button>`).join('');
     $('ctlRelays').querySelectorAll('button').forEach(b => b.onclick = () => { CTL.relays[b.dataset.i] = !CTL.relays[b.dataset.i]; drawRelays(); });
   };
   drawRelays();
@@ -1175,7 +1267,7 @@ function buildCtl(){
     sendCmd({ c:'relay', r, for:forSec(), then:thenVal() }, `Manual relays: ${on} for ${$('ctlFor').selectedOptions[0].text}, then ${thenVal()}`);
   };
   // overrides
-  const tri = (arr, prefix, i) => `<div class="tri"><b>${prefix}${i+1}</b><span class="seg">${[['n','Real'],['0','Off'],['1','On']].map(([v,l]) =>
+  const tri = (arr, prefix, i) => `<div class="tri"><b style="width:auto;min-width:34px">${esc(prefix==='DI' ? diName(i+1) : tName(i+1))}</b><span class="seg">${[['n','Real'],['0','Off'],['1','On']].map(([v,l]) =>
       `<button data-a="${prefix}" data-i="${i}" data-v="${v}" class="${arr[i]===v?'sel':''} f${v}">${l}</button>`).join('')}</span>${prefix==='DI' && PROTECT_DI.includes(i+1) ? ' <span class="mute" style="font-size:11px">protection</span>' : ''}</div>`;
   const drawOvr = () => {
     $('ctlOvrDi').innerHTML = '<div class="mute" style="font-size:11px">Digital inputs</div>' + CTL.di.map((_,i) => tri(CTL.di,'DI',i)).join('');
@@ -1223,12 +1315,184 @@ function buildCtl(){
       $('ctlSp').querySelectorAll('input').forEach(i => { if (i.dataset.k in parts[n]) i.classList.remove('chg'); });
     }
   };
+  wireLineButtons();
   $('ctlInt').value = CTL.st.int ?? 30;
   $('ctlIntSend').onclick = () => {
     const v = Number($('ctlInt').value);
     if (!Number.isInteger(v) || v < 30 || v > 300){ ctlMsg('bad', 'Interval must be a whole number from 30 to 300 s.'); return; }
     sendCmd({ c:'interval', sec:v }, `Data interval ${v} s`);
   };
+}
+
+// ---------- command builders (shared by Send now, + Line and groups) ----------
+const forText = () => $('ctlFor').selectedOptions[0].text;
+function modeCmd(m){ return m === 'auto' ? { c:'mode', v:'auto' } : { c:'mode', v:m, for:forSec(), then:thenVal() }; }
+function modeLabel(m){ const l = (MODES.find(x=>x[0]===m)||[m,m])[1]; return m === 'auto' ? 'Mode Auto' : `${l} (${forText()}, then ${thenVal()})`; }
+function relayCmd(){ return { c:'relay', r: CTL.relays.map(v => v ? '1' : '0').join(''), for:forSec(), then:thenVal() }; }
+function relayLabel(){ const on = CTL.relays.map((v,i)=> v ? rName(i+1) : '').filter(Boolean).join(', ') || 'all off'; return `Relays: ${on} (${forText()}, then ${thenVal()})`; }
+function ovrCmd(){ return { c:'ovr', di: CTL.di.join(''), t: CTL.t.join(''), hitemp: $('ovHitemp').checked?1:0, lowbat: $('ovLowbat').checked?1:0, sensor: $('ovSensor').checked?1:0, for:forSec(), then:thenVal() }; }
+function ovrRisky(){
+  const di = CTL.di.join(''), r = [];
+  PROTECT_DI.forEach(n => { if (di[n-1] !== 'n') r.push(`${diName(n)} forced ${di[n-1]==='1'?'ON':'OFF'}`); });
+  if ($('ovHitemp').checked) r.push('high temp ignored'); if ($('ovLowbat').checked) r.push('low battery ignored'); if ($('ovSensor').checked) r.push('sensor fail ignored');
+  return r;
+}
+function ovrLabel(){
+  const f = (arr, nm) => arr.map((c,i) => c==='n' ? '' : `${nm(i+1)}=${c==='1'?'On':'Off'}`).filter(Boolean).join(', ');
+  const parts = [f(CTL.di, diName), f(CTL.t, tName)].filter(Boolean);
+  const r = ovrRisky().filter(x => x.includes('ignored'));
+  return `Overrides: ${parts.join(', ') || 'all real'}${r.length ? '; ' + r.join(', ') : ''} (${forText()}, then ${thenVal()})`;
+}
+function confirmRisky(){ const r = ovrRisky(); return !r.length || confirm('This switches off machine protection:\n- ' + r.join('\n- ') + '\n\nThe machine can run without these safety checks for ' + forText() + '. Are you sure?'); }
+function spChanges(){
+  const ch = {};
+  for (const i of $('ctlSp').querySelectorAll('input.chg')){
+    const k = i.dataset.k, v = Math.round(Number(i.value)*10)/10, [lo,hi] = SP_LIM[k];
+    if (!Number.isFinite(v) || v < lo || v > hi){ ctlMsg('bad', `${k} must be from ${lo} to ${hi}.`); i.focus(); return null; }
+    ch[k] = v;
+  }
+  const parts = []; let cur = { c:'sp' };
+  for (const k of Object.keys(ch)){ const t = { ...cur, [k]: ch[k] }; if (JSON.stringify(t).length > 120 && Object.keys(cur).length > 1){ parts.push(cur); cur = { c:'sp', [k]: ch[k] }; } else cur = t; }
+  if (Object.keys(cur).length > 1) parts.push(cur);
+  return parts;
+}
+const spLabel = c => 'Setpoints ' + Object.keys(c).filter(k=>k!=='c').map(k=>k+'='+c[k]).join(', ');
+
+function wireLineButtons(){
+  $('ctlRelayLine').onclick = () => addLine(relayCmd(), relayLabel());
+  $('ctlOvrLine').onclick = () => { if (confirmRisky()) addLine(ovrCmd(), ovrLabel()); };
+  $('ctlSpLine').onclick = () => { const p = spChanges(); if (!p) return; if (!p.length){ ctlMsg('grey','No value changed.'); return; } p.forEach(c => addLine(c, spLabel(c))); };
+  $('grpRelay').onclick = () => { if (!confirmRisky()) return; runSteps([{ cmd: ovrCmd(), label: ovrLabel(), dur_s:0 }, { cmd: relayCmd(), label: relayLabel(), dur_s:0 }], 'Relays + DI + T'); };
+  $('grpRelayLine').onclick = () => { if (!confirmRisky()) return; addLine(ovrCmd(), ovrLabel()); addLine(relayCmd(), relayLabel()); };
+  $('grpMode1').onclick = () => { if (!confirmRisky()) return; const m = $('grpMode').value; runSteps([{ cmd: ovrCmd(), label: ovrLabel(), dur_s:0 }, { cmd: modeCmd(m), label: modeLabel(m), dur_s:0 }], 'Mode + DI + T'); };
+  $('grpModeLine').onclick = () => { if (!confirmRisky()) return; const m = $('grpMode').value; addLine(ovrCmd(), ovrLabel()); addLine(modeCmd(m), modeLabel(m)); };
+  $('ctlLineClear').onclick = () => { CTL.line = []; renderLine(); };
+  $('ctlLineRun').onclick = () => { if (!CTL.line.length){ ctlMsg('grey','The command line is empty. Add steps with the + buttons.'); return; } runSteps(CTL.line, 'Command line', $('ctlEnd').value).then(ok => { if (ok){ CTL.line = []; renderLine(); } }); };
+}
+
+// ---------- command line ----------
+const WAITS = [[0,'right away'],[60,'after 1 min'],[300,'after 5 min'],[900,'after 15 min'],[1800,'after 30 min'],[3600,'after 1 h'],[7200,'after 2 h'],[14400,'after 4 h'],[28800,'after 8 h'],[86400,'after 24 h']];
+function addLine(cmd, label){
+  if (!CTL) return;
+  if (CTL.line.length >= 20){ ctlMsg('bad','At most 20 steps in one line.'); return; }
+  CTL.line.push({ cmd, label, dur_s: 0 }); renderLine();
+  ctlMsg('grey', `Added to line: ${esc(label)}`);
+}
+function renderLine(){
+  if (!CTL) return;
+  const L = CTL.line;
+  $('ctlLine').innerHTML = L.length ? L.map((s,i) => `<div class="lstep"><span class="n">${i+1}</span><span class="t">${esc(s.label)}</span>
+      ${i < L.length - 1 || true ? `<select data-w="${i}" title="When does the next step start?">${WAITS.map(([v,t]) => `<option value="${v}" ${s.dur_s==v?'selected':''}>${i < L.length-1 ? 'next ' : 'end '}${t}</option>`).join('')}</select>` : ''}
+      <button data-u="${i}" title="Move up">↑</button><button data-x="${i}" title="Remove">✕</button></div>`).join('')
+    : '<div class="mute" style="font-size:12px">Empty. Use "+" or "+ Line" buttons to add steps.</div>';
+  $('ctlLine').querySelectorAll('select[data-w]').forEach(x => x.onchange = () => { L[x.dataset.w].dur_s = Number(x.value); renderPred(); });
+  $('ctlLine').querySelectorAll('button[data-u]').forEach(x => x.onclick = () => { const i = +x.dataset.u; if (i > 0){ [L[i-1], L[i]] = [L[i], L[i-1]]; renderLine(); } });
+  $('ctlLine').querySelectorAll('button[data-x]').forEach(x => x.onclick = () => { L.splice(+x.dataset.x, 1); renderLine(); });
+  renderPred();
+}
+// steps run on the server as a program (works with the browser closed)
+async function runSteps(steps, name, endThen){
+  if (!CTL || CTL.busy) return false;
+  setBusy(true); ctlMsg('wait', `⏳ ${esc(name)}: starting…`);
+  try {
+    const r = await api('prog_start', { imei: CTL.imei, name, end_then: endThen || thenVal(), steps: steps.map(s => ({ cmd: s.cmd, dur_s: s.dur_s || 0, label: s.label })) });
+    ctlMsg('ok', `▶ ${esc(name)} started (program ${r.program.id}). Progress is shown under the command line.`);
+    loadProg(); setTimeout(loadHist, 2000);
+    return true;
+  } catch(e){ ctlMsg('bad', `✕ ${esc(name)}: ${esc(e.message)}`); return false; }
+  finally { setBusy(false); }
+}
+async function loadProg(){
+  if (!CTL) return;
+  let rows; try { rows = (await api('prog_list', { imei: CTL.imei, limit: 5 })).rows; } catch(e){ return; }
+  CTL.prog = rows.find(p => p.status === 'running') || null;
+  const st = { running:'#2563eb', done:'var(--ok)', failed:'var(--bad)', cancelled:'var(--mute)' };
+  $('ctlProg').innerHTML = rows.length ? '<div class="mute" style="font-size:11px">Programs</div>' + rows.map(p => {
+    const n = p.steps.length, cur = p.steps[Math.min(p.step, n-1)];
+    let extra = '';
+    if (p.status === 'running'){
+      const wait = cur && cur.dur_s && p.step_done_at ? Math.max(0, cur.dur_s - (Date.now() - new Date(p.step_done_at))/1000) : null;
+      extra = ` · step ${Math.min(p.step+1,n)} of ${n}: ${esc(cur?.label || cur?.cmd?.c || '')}${wait != null ? ` · next in ${fmtLeft(wait)}` : (p.step_done_at ? '' : ' · waiting for machine')} <button class="danger" data-stop="${p.id}" style="padding:1px 6px;font-size:11px">Stop</button>`;
+    } else if (p.error) extra = ` · ${esc(p.error)}`;
+    return `<div style="font-size:12px;padding:3px 0"><b style="color:${st[p.status]}">${esc(p.status)}</b> #${p.id} ${esc(p.name || '')} · ${fmtTs(p.created_at)}${extra}</div>`;
+  }).join('') : '';
+  $('ctlProg').querySelectorAll('button[data-stop]').forEach(b => b.onclick = async () => {
+    if (!confirm('Stop program ' + b.dataset.stop + '? The machine keeps its current state until its own timer ends.')) return;
+    try { await api('prog_cancel', { imei: CTL.imei, id: Number(b.dataset.stop) }); loadProg(); } catch(e){ ctlMsg('bad', esc(e.message)); }
+  });
+  renderPred();
+}
+
+// ---------- prediction (rules of firmware V2.0-P2C4 as documented; auto-mode relay logic needs the logic code) ----------
+const ISSUES = { pressure:{ di:5, txt:'pressure (DI5)' }, voltage:{ di:3, txt:'voltage (DI3)' }, low_batt:{ key:'lowbat', txt:'low battery' }, lowbat:{ key:'lowbat', txt:'low battery' },
+  hitemp:{ key:'hitemp', txt:'high temperature' }, high_temp:{ key:'hitemp', txt:'high temperature' }, sensor:{ key:'sensor', txt:'sensor fail' }, sensor_fail:{ key:'sensor', txt:'sensor fail' } };
+function predIssues(alarms, ov){
+  // which machine issues still stop the machine with these overrides
+  const left = [], fixed = [];
+  for (const a of (alarms || [])){
+    const it = ISSUES[a]; if (!it){ left.push(a); continue; }
+    const ok = it.di ? ov.di[it.di-1] === '1' : !!ov[it.key];
+    (ok ? fixed : left).push(it.txt);
+  }
+  return { left, fixed };
+}
+function renderPred(){
+  if (!CTL || !CTL.st || !$('ctlPred')) return;
+  const s = CTL.st, r = current && current.latest || {};
+  const now = Date.now();
+  const tmv = (s.tm || [])[0];
+  const ov0 = { di: s.dio.split(''), t: s.tso.split(''), hitemp: !!(s.isb&1), lowbat: !!(s.isb&2), sensor: !!(s.isb&4) };
+  const ev = [];
+  const at = t => t <= now + 2000 ? 'now' : '+' + fmtLeft((t - now)/1000).replace(/ 0 s$/,'');
+  const modeTxt = m => (MODES.find(x=>x[0]===m)||[m, m==='manual'?'Manual':m])[1];
+  const describe = (mode, ov, relays) => {
+    const iss = predIssues(r.alarms, ov);
+    let t = '';
+    if (mode === 'auto') t = 'Auto: machine decides from temperatures and inputs (exact relays need the logic code).';
+    else if (mode === 'manual') t = `Manual: ${relays.map((v,i)=> v==='1' ? rName(i+1) : '').filter(Boolean).join(', ') || 'all relays off'}${relays[0]==='1' && tmv != null ? ` (R1 starts after TM1 = ${tmv} s)` : ''}.`;
+    else if (mode === 'defrost') t = 'Defrost: one cycle (ends by DT2 / T2), then Auto.';
+    else if (mode === 'standby') t = 'Standby: machine stopped and waiting.';
+    else t = `${modeTxt(mode)}: forced. Temperature conditions and DI1, DI4 are not used.`;
+    if (mode !== 'standby'){
+      if (iss.left.length) t += ` <span class="warn">⚠ Will stay stopped (ISSUE) because of: ${esc(iss.left.join(', '))}.</span>`;
+      else if (iss.fixed.length) t += ` <span class="okk">Issues bypassed by overrides: ${esc(iss.fixed.join(', '))}.</span>`;
+    }
+    return t;
+  };
+  // current
+  let mode = s.rm, relays = s.mr.split(''), ov = { ...ov0, di:[...ov0.di], t:[...ov0.t] };
+  ev.push([now, `<b>Now</b> · ${describe(mode, ov, relays)}${r.alarms && r.alarms.length ? ` <span class="mute">Active alarms: ${esc(r.alarms.join(', '))}.</span>` : ''}`]);
+  const apply = (c) => {
+    if (c.c === 'mode'){ mode = c.v; }
+    if (c.c === 'relay'){ mode = 'manual'; relays = (c.r || relays.join('')).split(''); }
+    if (c.c === 'ovr'){ if (c.clear){ ov = { di:'nnnnn'.split(''), t:'nnnnn'.split(''), hitemp:false, lowbat:false, sensor:false }; }
+      if (c.di) ov.di = c.di.split(''); if (c.t) ov.t = c.t.split(''); for (const k of ['hitemp','lowbat','sensor']) if (k in c) ov[k] = !!c[k]; }
+  };
+  const fallback = (t, then) => { ev.push([t, `<b>Timer ends</b> → ${then === 'standby' ? 'Standby' : 'Auto'}; manual relays off; overrides back to normal.`]); mode = then; relays = '000000000'.split(''); ov = { di:'nnnnn'.split(''), t:'nnnnn'.split(''), hitemp:false, lowbat:false, sensor:false }; };
+  // plan: the line (or nothing) — the running program is shown separately
+  const plan = CTL.line;
+  if (!plan.length){
+    const left = s.left - (now - s.at)/1000;
+    if (left > 0){ fallback(now + left*1000, s.then); ev[ev.length-1][1] += ' ' + describe(mode, ov, relays); }
+    else ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (or the machine logic in Auto).</span>']);
+    if (CTL.prog) ev.push([now, `<span class="mute">A program (#${CTL.prog.id}) is running; see its steps above.</span>`]);
+  } else {
+    let t = now, holdEnd = null, holdThen = null;
+    plan.forEach((st, i) => {
+      if (holdEnd && holdEnd <= t){ fallback(holdEnd, holdThen); holdEnd = null; }
+      const c = { ...st.cmd };
+      const last = i === plan.length - 1;
+      if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? $('ctlEnd').value : 'standby'; }
+      apply(c);
+      if (c.for){ holdEnd = t + c.for*1000; holdThen = c.then || 'auto'; }
+      else if (['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){ holdEnd = t + 300e3; holdThen = c.then || 'auto'; }
+      ev.push([t, `<b>Step ${i+1}</b> ${esc(st.label)} → ${c.c === 'sp' || c.c === 'interval' ? 'saved in machine.' : describe(mode, ov, relays)}`]);
+      t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
+    });
+    if (holdEnd) fallback(Math.max(holdEnd, t), holdThen);
+  }
+  $('ctlPred').innerHTML = ev.map(([t, h]) => `<div class="ev"><span class="tm">${at(t)}</span><span>${h}</span></div>`).join('') +
+    `<div class="note">Based on the machine's documented rules${MCFG?.machine?.logic_version ? ' (logic ' + esc(MCFG.machine.logic_version) + ')' : ''} and the latest data. What Auto does with the relays needs the logic code.</div>`;
 }
 
 function ctlMsg(kind, text){ const m = $('ctlMsg'); m.className = 'ctlmsg' + (kind ? ' show ' + kind : ''); m.innerHTML = text; }
@@ -1311,17 +1575,62 @@ async function loadAccess(){
     <td>${p.sections.length ? p.sections.map(s=>`<span class="chip n">${esc(s)}</span>`).join('') : '<span class="mute">none</span>'}</td>
     <td>${p.is_admin ? 'Yes' : ''}</td><td>${p.active ? 'Yes' : '<span class="err">Blocked</span>'}</td></tr>`).join('');
   $('peopleRows').querySelectorAll('tr.click').forEach(tr => tr.onclick = () => editPerson(accessCache.people.find(p=>p.email===tr.dataset.email)));
-  $('deviceRows').innerHTML = accessCache.devices.map(d => `<tr data-imei="${esc(d.imei)}">
-    <td>${esc(d.imei)}</td><td><input type="text" class="dLabel" value="${esc(d.label)}" placeholder="e.g. Prompt van 1"></td>
-    <td><input type="text" class="dSerial" value="${esc(d.serial_no)}" placeholder="e.g. FZ-RF-0012"></td>
-    <td>${ago(d.last_seen)}</td><td><button class="dSave">Save</button> <span class="dMsg mute"></span></td></tr>`).join('');
-  $('deviceRows').querySelectorAll('tr').forEach(tr => tr.querySelector('.dSave').onclick = async () => {
-    const msg = tr.querySelector('.dMsg');
-    try { await api('device_save', { imei: tr.dataset.imei, label: tr.querySelector('.dLabel').value, serial_no: tr.querySelector('.dSerial').value }); msg.textContent='Saved'; machinesCache=[]; }
-    catch(e){ msg.textContent = e.message; }
-  });
+  loadMachinesAdmin();
   editPerson(null);
 }
+// ---- Machines by serial number (B016) ----
+let MADM = null, MEDIT = null;
+async function loadMachinesAdmin(){
+  try { MADM = await api('machines_admin'); } catch(e){ $('mRows').innerHTML = `<tr><td colspan="4" class="err">${esc(e.message)}</td></tr>`; return; }
+  const cur = sn => (MADM.links.find(l => l.serial_no === sn && !l.to_ts) || {}).imei;
+  $('mRows').innerHTML = MADM.machines.length ? MADM.machines.map(m => `<tr class="click" data-s="${esc(m.serial_no)}"><td><b>${esc(m.serial_no)}</b></td><td>${esc(m.label)}</td><td>${cur(m.serial_no) ? esc(cur(m.serial_no)) : '<span class="mute">none</span>'}</td><td>${esc(m.logic_version)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="mute">No machines yet. Press "+ Add machine".</td></tr>';
+  $('mRows').querySelectorAll('tr.click').forEach(tr => tr.onclick = () => editMachine(MADM.machines.find(m => m.serial_no === tr.dataset.s)));
+  const linked = new Set(MADM.links.filter(l => !l.to_ts).map(l => l.imei));
+  const free = MADM.devices.filter(d => !linked.has(d.imei));
+  $('mFree').innerHTML = free.length ? 'IMEIs not linked to a machine: ' + free.map(d => `<b>${esc(d.imei)}</b> (${agoText(d.last_seen)})`).join(', ') : '';
+  editMachine(MEDIT ? MADM.machines.find(m => m.serial_no === MEDIT) : null);
+}
+function editMachine(m){
+  MEDIT = m ? m.serial_no : null;
+  $('mTitle').textContent = m ? 'Edit ' + m.serial_no : 'Add machine';
+  $('mSerial').value = m?.serial_no || ''; $('mSerial').disabled = !!m;
+  $('mLabel').value = m?.label || ''; $('mLogic').value = m?.logic_version || ''; $('mNotes').value = m?.notes || '';
+  const grid = (id, n, pre, vals, ex) => { $(id).innerHTML = Array.from({length:n}, (_,i) => `<label style="display:block"><span>${pre}${i+1}</span><input type="text" data-i="${i}" value="${esc((vals||[])[i] || '')}" placeholder="${ex[i] || ''}"></label>`).join(''); };
+  grid('mRelays', 9, 'R', m?.relay_names, ['Compressor','Condenser fan','Evaporator fan','Solenoid valve','Heater','','','','12 V out']);
+  grid('mDis', 5, 'DI', m?.di_names, ['Mode select','','Voltage OK','Cooling block','Pressure OK']);
+  grid('mTs', 5, 'T', m?.t_names, ['Room','Evaporator','Tank (cooling)','Tank (charging)','Discharge']);
+  $('mMsg').className = 'err'; $('mMsg').textContent = '';
+  $('mLinkBox').classList.toggle('hidden', !m);
+  if (m && MADM){
+    const curImei = (MADM.links.find(l => l.serial_no === m.serial_no && !l.to_ts) || {}).imei;
+    const owner = imei => (MADM.links.find(l => l.imei === imei && !l.to_ts) || {}).serial_no;
+    $('mImei').innerHTML = '<option value="">— pick IMEI —</option>' + MADM.devices.map(d => `<option value="${esc(d.imei)}" ${d.imei===curImei?'selected':''}>${esc(d.imei)} · ${agoText(d.last_seen)}${owner(d.imei) && owner(d.imei)!==m.serial_no ? ' · now on ' + esc(owner(d.imei)) : ''}</option>`).join('');
+    const hist = MADM.links.filter(l => l.serial_no === m.serial_no);
+    $('mHist').innerHTML = hist.length ? '<b>IMEI history</b><br>' + hist.map(l => `${esc(l.imei)}: ${fmtT(l.from_ts)} to ${l.to_ts ? fmtT(l.to_ts) : 'now'} <span class="mute">(${esc((l.linked_by||'').split('@')[0])})</span>`).join('<br>') : '<span class="mute">No IMEI linked yet.</span>';
+  }
+}
+$('mNew').onclick = () => editMachine(null);
+$('mSave').onclick = async () => {
+  const vals = id => [...$(id).querySelectorAll('input')].map(i => i.value.trim());
+  const machine = { serial_no: $('mSerial').value, label: $('mLabel').value, logic_version: $('mLogic').value, notes: $('mNotes').value,
+    relay_names: vals('mRelays'), di_names: vals('mDis'), t_names: vals('mTs') };
+  $('mMsg').className = 'err'; $('mMsg').textContent = 'Saving…';
+  try { const r = await api('machine_save', { machine }); MEDIT = r.serial_no; await loadMachinesAdmin(); $('mMsg').className='okmsg'; $('mMsg').textContent = 'Saved. Link the IMEI below if not done yet.'; machinesCache = []; }
+  catch(e){ $('mMsg').textContent = e.message; }
+};
+$('mLink').onclick = async () => {
+  const imei = $('mImei').value; if (!imei || !MEDIT) return;
+  const owner = (MADM.links.find(l => l.imei === imei && !l.to_ts) || {}).serial_no;
+  if (owner && owner !== MEDIT && !confirm(`IMEI ${imei} is now on ${owner}. Move it to ${MEDIT}? ${owner} will have no IMEI.`)) return;
+  try { await api('machine_link', { serial_no: MEDIT, imei }); await loadMachinesAdmin(); $('mMsg').className='okmsg'; $('mMsg').textContent = `Linked ${imei} to ${MEDIT}.`; machinesCache = []; }
+  catch(e){ $('mMsg').textContent = e.message; }
+};
+$('mUnlink').onclick = async () => {
+  if (!MEDIT || !confirm(`Unlink the IMEI from ${MEDIT}?`)) return;
+  try { await api('machine_link', { serial_no: MEDIT, imei: '' }); await loadMachinesAdmin(); } catch(e){ $('mMsg').textContent = e.message; }
+};
+
 function editPerson(p){
   editing = p;
   $('pfTitle').textContent = p ? 'Edit ' + p.email : 'Add person';
