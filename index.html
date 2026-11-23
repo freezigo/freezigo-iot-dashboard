@@ -418,7 +418,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B019 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B020 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -435,7 +435,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B019';
+  var BUILD = 'B020';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -692,7 +692,7 @@ async function openMachine(imei){
   }, LIST_REFRESH_MS);
   renderLatest(r);
   MCFG = null;
-  api('machine_cfg', { imei }).then(c => { MCFG = c; if (c.serial) $('dTitle').textContent = c.serial + ' · ' + imei + (c.machine && c.machine.label ? ' · ' + c.machine.label : ''); }).catch(() => {});
+  api('machine_cfg', { imei }).then(c => { MCFG = c; try { buildPicker(); } catch(e) {} if (c.serial) $('dTitle').textContent = c.serial + ' · ' + imei + (c.machine && c.machine.label ? ' · ' + c.machine.label : ''); }).catch(() => {});
   ctlButtonUpdate();
   setRange(24);
 }
@@ -739,10 +739,10 @@ function buildPicker(){
   let h = '';
   const T = [1,2,3,4,5].map(n=>'temp'+n), V = ['dc1','dc2'], D = [1,2,3,4,5].map(n=>'di'+n), R = [1,2,3,4,5,6,7,8,9].map(n=>'r'+n);
   h += grp('Data', ['dlive','doff'], tg('dlive','Online', DATA_COL.live) + tg('doff','Offline (sent later)', DATA_COL.offline));
-  if (has('temps')) h += grp('Temperatures', T, T.map((k,i)=>tg(k,'T'+(i+1),TEMP_COL[i])).join(''));
+  if (has('temps')) h += grp('Temperatures', T, T.map((k,i)=>tg(k,tName(i+1),TEMP_COL[i])).join(''));
   if (has('power')) h += grp('DC voltage', V, tg('dc1','DC1',DC_COL[0]) + tg('dc2','DC2',DC_COL[1]));
   if (has('io')) {
-    h += grp('Digital inputs', D, D.map((k,i)=>tg(k,'DI'+(i+1))).join(''));
+    h += grp('Digital inputs', D, D.map((k,i)=>tg(k,diName(i+1))).join(''));
     h += grp('Relays', R, R.map((k,i)=>tg(k,'R'+(i+1))).join(''));
   }
   const E = [...(has('alarms')?['alarms']:[]), ...(has('settings')?['scenario']:[])];
@@ -835,7 +835,7 @@ function laneList(){
   if (has('settings') && SEL.scenario) L.push({ k:'scenario', label:'Scenario' });
   if (has('alarms') && SEL.alarms) L.push({ k:'alarms', label:'Alarms' });
   if (has('io')) {
-    [1,2,3,4,5].forEach(n => { if (SEL['di'+n]) L.push({ k:'di'+n, label:'DI'+n }); });
+    [1,2,3,4,5].forEach(n => { if (SEL['di'+n]) L.push({ k:'di'+n, label:diName(n) }); });
     [1,2,3,4,5,6,7,8,9].forEach(n => { if (SEL['r'+n]) L.push({ k:'r'+n, label:'R'+n }); });
   }
   return L;
@@ -1124,7 +1124,7 @@ function hookHover(chart){
       if (inGap(t) || (!b && !r)) html += '<div style="color:#ffd27a">No message received at this time (unit off or messages missed)</div>';
       if (has('settings')) html += `<div>Scenario : <b>${r ? esc(r.scenario) : '–'}</b>${r && r.code!=null ? ` <span style="opacity:.6">(code ${esc(r.code)})</span>` : ''}</div>`;
       if (has('alarms')) html += `<div>Alarms : ${r ? ((r.alarms||[]).length ? `<b style="color:#ff9b9b">${esc(r.alarms.join(', '))}</b>` : 'none') : '–'}</div>`;
-      if (has('temps')) html += `<div class="grid5">${[1,2,3,4,5].map(n=>`<span>T${n}</span>`).join('')}${[1,2,3,4,5].map(n=>`<b>${b?num(b['temp'+n]):'–'}</b>`).join('')}</div>`;
+      if (has('temps')) html += `<div class="grid5">${[1,2,3,4,5].map(n=>`<span>${esc(tName(n))}</span>`).join('')}${[1,2,3,4,5].map(n=>`<b>${b?num(b['temp'+n]):'–'}</b>`).join('')}</div>`;
       if (has('power')) html += `<div class="grid5" style="grid-template-columns:repeat(2,auto);justify-content:start"><span>DC1</span><span>DC2</span><b>${b?num(b.dc1):'–'}</b><b>${b?num(b.dc2):'–'}</b></div>`;
       if (has('settings') && (SEL.sp || SEL.hys || SEL.tm)){
         const row = (lab, key, arr) => `<div class="grid5" style="grid-template-columns:48px repeat(${Math.max((arr||[]).length,1)},auto);justify-content:start"><span>${lab}</span>${(arr||[]).map((v,i)=>`<span>${key}${i+1}</span>`).join('')}<span></span>${(arr||[]).map(v=>`<b>${v}</b>`).join('')}</div>`;
@@ -1136,7 +1136,7 @@ function hookHover(chart){
         }
       }
       if (has('io')){
-        html += `<div class="boxes">${[1,2,3,4,5].map(n=>`<span class="bx ${r&&r['di'+n]?'on':''}">DI${n}</span>`).join('')}</div>`;
+        html += `<div class="boxes">${[1,2,3,4,5].map(n=>`<span class="bx ${r&&r['di'+n]?'on':''}" title="${esc(diName(n))}">DI${n}</span>`).join('')}</div>`;
         html += `<div class="boxes">${[1,2,3,4,5,6,7,8,9].map(n=>`<span class="bx ${r&&r['r'+n]?'on':''}">R${n}</span>`).join('')}</div>`;
       }
     } else if (onScn && run){
@@ -1179,8 +1179,13 @@ const PROTECT_DI = [3,5];   // DI3 voltage OK, DI5 pressure OK
 let CTL = null;
 let MCFG = null;            // { serial, machine:{relay_names, di_names, t_names, logic_version, label} } of the open machine
 const rName = i => { const n = MCFG?.machine?.relay_names?.[i-1]; return n ? `R${i} ${n}` : (RELAY_NAMES[i] || 'R'+i); };
-const diName = i => { const n = MCFG?.machine?.di_names?.[i-1]; return n ? `DI${i} ${n}` : 'DI'+i; };
-const tName = i => { const n = MCFG?.machine?.t_names?.[i-1]; return n ? `T${i} ${n}` : 'T'+i; };             // { imei, st:{...live state}, base: ms when 'left' was read, busy, relays, di, t, sp:{orig, cur} }
+// Default names from firmware V2.0-P2C4..P2C6 logic (app_freertos.c). A machine's own saved names win.
+const DEF_DI = ['Charge enable','Not used','Voltage OK','Cooling block','Pressure OK'];
+const DEF_T  = ['Room','Evaporator','Tank','Suction','Discharge'];
+const DEF_TC = ['Room needs cooling','Evap not frosted','Tank cold','Tank needs charge','Discharge OK'];   // temperature conditions DT1..DT5 (override "t")
+const diName = i => `DI${i} ${MCFG?.machine?.di_names?.[i-1] || DEF_DI[i-1]}`;
+const tName  = i => `T${i} ${MCFG?.machine?.t_names?.[i-1] || DEF_T[i-1]}`;
+const tcName = i => `C${i} ${DEF_TC[i-1]}`;             // { imei, st:{...live state}, base: ms when 'left' was read, busy, relays, di, t, sp:{orig, cur} }
 
 function canCtl(r){ return !!(ME && ME.can_control && r && r.rmode); }
 function ctlButtonUpdate(){
@@ -1293,7 +1298,7 @@ function buildCtl(){
     sendCmd({ c:'relay', r, for:forSec(), then:thenVal() }, `Manual relays: ${on} for ${$('ctlFor').selectedOptions[0].text}, then ${thenVal()}`);
   };
   // overrides
-  const tri = (arr, prefix, i) => `<div class="tri"><b style="width:auto;min-width:34px">${esc(prefix==='DI' ? diName(i+1) : tName(i+1))}</b><span class="seg">${[['n','Real'],['0','Off'],['1','On']].map(([v,l]) =>
+  const tri = (arr, prefix, i) => `<div class="tri"><b style="width:auto;min-width:34px">${esc(prefix==='DI' ? diName(i+1) : tcName(i+1))}</b><span class="seg">${[['n','Real'],['0','Off'],['1','On']].map(([v,l]) =>
       `<button data-a="${prefix}" data-i="${i}" data-v="${v}" class="${arr[i]===v?'sel':''} f${v}">${l}</button>`).join('')}</span>${prefix==='DI' && PROTECT_DI.includes(i+1) ? ' <span class="mute" style="font-size:11px">protection</span>' : ''}</div>`;
   const drawOvr = () => {
     $('ctlOvrDi').innerHTML = '<div class="mute" style="font-size:11px">Digital inputs</div>' + CTL.di.map((_,i) => tri(CTL.di,'DI',i)).join('');
@@ -1305,7 +1310,7 @@ function buildCtl(){
   $('ctlOvrSend').onclick = () => {
     const di = CTL.di.join(''), t = CTL.t.join('');
     const risky = [];
-    PROTECT_DI.forEach(n => { if (di[n-1] !== 'n') risky.push(`DI${n} forced ${di[n-1]==='1'?'ON':'OFF'}`); });
+    PROTECT_DI.forEach(n => { if (di[n-1] !== 'n') risky.push(`${diName(n)} forced ${di[n-1]==='1'?'ON':'OFF'}`); });
     if ($('ovHitemp').checked) risky.push('high temp ignored');
     if ($('ovLowbat').checked) risky.push('low battery ignored');
     if ($('ovSensor').checked) risky.push('sensor fail ignored');
@@ -1365,7 +1370,7 @@ function ovrRisky(){
 }
 function ovrLabel(){
   const f = (arr, nm) => arr.map((c,i) => c==='n' ? '' : `${nm(i+1)}=${c==='1'?'On':'Off'}`).filter(Boolean).join(', ');
-  const parts = [f(CTL.di, diName), f(CTL.t, tName)].filter(Boolean);
+  const parts = [f(CTL.di, diName), f(CTL.t, tcName)].filter(Boolean);
   const r = ovrRisky().filter(x => x.includes('ignored'));
   return `Overrides: ${parts.join(', ') || 'all real'}${r.length ? '; ' + r.join(', ') : ''} (${forText()}, then ${thenVal()})`;
 }
@@ -1788,8 +1793,8 @@ function editMachine(m){
   $('mLabel').value = m?.label || ''; $('mLogic').value = m?.logic_version || ''; $('mNotes').value = m?.notes || '';
   const grid = (id, n, pre, vals, ex) => { $(id).innerHTML = Array.from({length:n}, (_,i) => `<label style="display:block"><span>${pre}${i+1}</span><input type="text" data-i="${i}" value="${esc((vals||[])[i] || '')}" placeholder="${ex[i] || ''}"></label>`).join(''); };
   grid('mRelays', 9, 'R', m?.relay_names, ['Compressor','Condenser fan','Evaporator fan','Solenoid valve','Heater','','','','12 V out']);
-  grid('mDis', 5, 'DI', m?.di_names, ['Mode select','','Voltage OK','Cooling block','Pressure OK']);
-  grid('mTs', 5, 'T', m?.t_names, ['Room','Evaporator','Tank (cooling)','Tank (charging)','Discharge']);
+  grid('mDis', 5, 'DI', m?.di_names, DEF_DI);
+  grid('mTs', 5, 'T', m?.t_names, DEF_T);
   $('mMsg').className = 'err'; $('mMsg').textContent = '';
   $('mLinkBox').classList.toggle('hidden', !m);
   if (m && MADM){
