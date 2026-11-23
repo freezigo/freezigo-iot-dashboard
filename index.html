@@ -7,11 +7,12 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
-    /* ===== DESIGN TOKENS (B023) – change these to restyle the whole dashboard ===== */
+    /* ===== DESIGN TOKENS (B024) – change these to restyle the whole dashboard ===== */
     --font:Inter,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --fs:14px;
     --bg:#f5f6f8; --card:#fff; --ink:#1d2330; --mute:#6b7383; --line:#e3e6ec;
     --ok:#1f9d55; --bad:#d64545; --acc:#2563eb;
     --radius:10px; --radius-sm:6px; --soft:#eef1f6; --hover:#f0f4ff;
+    --sel-bg:#fde2e2; --sel-line:#e8a0a0; --sel-ink:#5a0d0d;                /* selected toggle buttons */
     /* graph */
     --t1:#2563eb; --t2:#d64545; --t3:#1f9d55; --t4:#d98a00; --t5:#7c3aed;   /* T1..T5 lines */
     --dc1:#0891b2; --dc2:#475569;                                           /* DC1, DC2 lines */
@@ -30,7 +31,7 @@
   button,select,input{font:inherit}
   button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:var(--radius-sm);padding:6px 12px;cursor:pointer}
   button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
-  button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  button.on{background:var(--ink);color:var(--card);border-color:var(--ink)}
   button.danger{color:var(--bad)}
   main{padding:20px;max-width:1300px;margin:0 auto}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
@@ -86,7 +87,7 @@
   .stats b{font-weight:600}
   .stats .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px}
   .tg{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--ink)}
-  .tg.on,.tg.on:hover{background:#fde2e2;border-color:#e8a0a0;color:var(--ink)}
+  .tg.on,.tg.on:hover{background:var(--sel-bg);border-color:var(--sel-line);color:var(--sel-ink)}
   .tg.all{font-weight:600;color:var(--mute)}
   .hoverbox .grid5{display:grid;grid-template-columns:repeat(5,auto);gap:0 12px;margin:6px 0}
   .hoverbox .grid5 span{opacity:.7;font-size:11px}
@@ -133,7 +134,7 @@
   .ctlgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
   .ctlgrid button{padding:6px 4px;font-size:12px}
   .ctlgrid button.cur{outline:2px solid var(--acc)}
-  .ctlgrid button.on{background:#fde2e2;border-color:#d64545;color:#8a1c1c;font-weight:600}
+  .ctlgrid button.on{background:var(--sel-bg);border-color:var(--on);color:var(--sel-ink);font-weight:600}
   .ctl .note{font-size:11px;color:var(--mute);margin-top:6px;line-height:1.4}
   .ctl .checks label{font-size:12px;margin-right:10px}
   .tri{display:flex;align-items:center;gap:6px;margin:3px 0}
@@ -439,7 +440,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B023 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B024 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -456,7 +457,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B023';
+  var BUILD = 'B024';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -544,7 +545,7 @@ const toLocalInput = d => { const x = new Date(d); x.setMinutes(x.getMinutes()-x
 const machineName = r => [r.label, r.serial_no].filter(Boolean).join(' · ');
 
 async function api(op, args = {}){
-  if (window.FZ_DEMO) return window.FZ_DEMO.api(op, args);     // B023: design copy with sample data, no server
+  if (window.FZ_DEMO) return window.FZ_DEMO.api(op, args);     // B024: design copy with sample data, no server
   const { data:{ session } } = await sb.auth.getSession();
   if (!session) throw Object.assign(new Error('Log in first.'), { status:401 });
   const r = await fetch(IOT_API, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token }, body: JSON.stringify({ op, ...args }) });
@@ -740,11 +741,11 @@ function bucketFor(from, to, maxPts = 500){
   return steps.find(s => secs/s <= maxPts) || 86400;
 }
 // ===== One combined graph (B004) =====
-// B023: width in px of the longest row label, so long names (e.g. "DI3 Voltage OK") are never cut off
+// B024: width in px of the longest row label, so long names (e.g. "DI3 Voltage OK") are never cut off
 const labelW = (labels, px) => { const c = labelW.c || (labelW.c = document.createElement('canvas').getContext('2d')); c.font = px + 'px ' + UI_COL.font; return Math.ceil(Math.max(0, ...labels.map(t => c.measureText(String(t)).width))); };
 const LANE_H = 16;                          // height of one on/off row at the top
 const SAMPLE_S = 30;                        // a single sample is drawn as 30 s long
-// B023: graph colours come from the design tokens in :root (CSS), so a theme change restyles the graphs too
+// B024: graph colours come from the design tokens in :root (CSS), so a theme change restyles the graphs too
 const cssv = (n, d) => (getComputedStyle(document.documentElement).getPropertyValue(n) || '').trim() || d;
 const TEMP_COL = [], DC_COL = [], DATA_COL = {}, UI_COL = {};
 function readTokens(){
@@ -752,8 +753,8 @@ function readTokens(){
   DC_COL[0] = cssv('--dc1','#0891b2'); DC_COL[1] = cssv('--dc2','#475569');
   DATA_COL.live = cssv('--live','#1f9d55'); DATA_COL.offline = cssv('--offline','#e8890c');
   UI_COL.on = cssv('--on','#d64545'); UI_COL.off = cssv('--off','#c9ced8'); UI_COL.text = cssv('--lane-text','#6b7383'); UI_COL.gap = cssv('--gap','rgba(107,115,131,.12)');
-  UI_COL.font = cssv('--font','Inter, Segoe UI, Arial, sans-serif'); UI_COL.ink = cssv('--ink','#1d2330'); UI_COL.mute = cssv('--mute','#6b7383');
-  if (window.Chart){ Chart.defaults.font.family = UI_COL.font; Chart.defaults.color = UI_COL.mute; }
+  UI_COL.soft = cssv('--soft','#eef1f6'); UI_COL.line = cssv('--line','#e3e6ec'); UI_COL.font = cssv('--font','Inter, Segoe UI, Arial, sans-serif'); UI_COL.ink = cssv('--ink','#1d2330'); UI_COL.mute = cssv('--mute','#6b7383');
+  if (window.Chart){ Chart.defaults.font.family = UI_COL.font; Chart.defaults.color = UI_COL.mute; Chart.defaults.borderColor = UI_COL.line; }
 }
 readTokens();
 window.FZ_retheme = () => { readTokens(); try { drawMain(); } catch(e){} try { drawPanel(); } catch(e){} try { buildPicker(); } catch(e){} };
@@ -897,7 +898,7 @@ const lanePlugin = {
       const y = top0 + i*LANE_H + LANE_H/2;
       ln.y = y;
       ctx.fillStyle = UI_COL.text; ctx.textAlign = 'right'; ctx.fillText(ln.label, a.left - 6, y);
-      ctx.strokeStyle = '#eef1f6'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.left, y); ctx.lineTo(a.right, y); ctx.stroke();
+      ctx.strokeStyle = UI_COL.soft; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.left, y); ctx.lineTo(a.right, y); ctx.stroke();
       if (ln.k === 'data'){
         const D = G.data || [];
         D.forEach((d, j) => {
@@ -964,7 +965,7 @@ function drawMain(){
   const lanes = laneList();
   const span = to - from;
   const showV = ds.some(d => d.yAxisID === 'yv');
-  const oldPin = charts.main ? charts.main._pin : null;   // B023: keep pinned details across redraws
+  const oldPin = charts.main ? charts.main._pin : null;   // B024: keep pinned details across redraws
   if (charts.main) charts.main.destroy();
   charts.main = new Chart($('cMain'), {
     type:'line', data:{ datasets: ds }, plugins:[lanePlugin],
@@ -1099,7 +1100,7 @@ function renderScroll(f, t){
   };
 })();
 $('zoomReset').onclick = zoomReset;
-// B023: a click anywhere outside the graph closes pinned details
+// B024: a click anywhere outside the graph closes pinned details
 document.addEventListener('mousedown', ev => {
   const c = charts.main; if (!c || !c._pin) return;
   if (ev.target === c.canvas || $('hoverBox').contains(ev.target)) return;
@@ -1125,7 +1126,7 @@ function hookHover(chart){
   };
   const finish = () => {
     const d = chart._drag; chart._drag = null;
-    if (d && !d.moved && d.mode === 'rect' && !SEL.hover){       // B023: click = show all details at this point
+    if (d && !d.moved && d.mode === 'rect' && !SEL.hover){       // B024: click = show all details at this point
       chart._pin = { x: d.x0, y: d.y0 }; chart._hoverX = d.x0; chart.draw(); show(d.x0, d.y0, true); return;
     }
     if (!d || !d.moved){ chart.draw(); return; }
@@ -1153,10 +1154,10 @@ function hookHover(chart){
       chart.draw(); return;
     }
     if (mx < a.left || mx > a.right){ if (!chart._pin) cv.onmouseleave(); return; }
-    if (chart._pin && !SEL.hover) return;          // B023: details pinned by a click stay put
+    if (chart._pin && !SEL.hover) return;          // B024: details pinned by a click stay put
     show(mx, my, false);
   };
-  // B023: build and place the details box. full = true shows all details (click with "details on hover" off)
+  // B024: build and place the details box. full = true shows all details (click with "details on hover" off)
   const show = (mx, my, full) => {
     const a = chart.chartArea;
     const t = chart.scales.x.getValueForPixel(mx);
@@ -1650,7 +1651,7 @@ function renderPred(){
     const c = { ...st.cmd };
     if (['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto') && !c.for) c.for = 300;
     const last = i === plan.length - 1;
-    // B023: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
+    // B024: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
     if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){
       const own = c.for || 300;
       if (own >= st.dur_s){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? endThen : (c.then || 'standby'); }
@@ -1664,7 +1665,7 @@ function renderPred(){
     if (c.c === 'mode' && c.v === 'defrost' && decide().scen === 4){ const te = t + FW_T2*1000; if (!st.dur_s || st.dur_s*1000 > FW_T2*1000){ mark(te); mode = 'auto'; ev.push([te, `<b>Defrost cycle ends</b> → Auto. ${describe()}`]); } }
     t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
   });
-  if (holdEnd) fallback(holdEnd, holdThen);   // B023: at the real end of the Run for time, even if that is before the line ends
+  if (holdEnd) fallback(holdEnd, holdThen);   // B024: at the real end of the Run for time, even if that is before the line ends
   else if (!plan.length) ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (in Auto the machine follows its temperatures).</span>']);
   const horizon = Math.max(now + 30*60e3, (segs.length ? segs[segs.length-1].t1 : now) + 10*60e3, segStart + 10*60e3);
   mark(horizon);
@@ -1865,7 +1866,7 @@ function editMachine(m){
     $('mHist').innerHTML = hist.length ? '<b>IMEI history</b><br>' + hist.map(l => `${esc(l.imei)}: ${fmtT(l.from_ts)} to ${l.to_ts ? fmtT(l.to_ts) : 'now'} <span class="mute">(${esc((l.linked_by||'').split('@')[0])})</span>`).join('<br>') : '<span class="mute">No IMEI linked yet.</span>';
   }
 }
-// ---- B023: serial number inside the controller (firmware P2C9: {"c":"serial","v":"..."}, boot event "sn") ----
+// ---- B024: serial number inside the controller (firmware P2C9: {"c":"serial","v":"..."}, boot event "sn") ----
 const fwNum = fw => { const m = /P2C(\d+)/.exec(fw || ''); return m ? Number(m[1]) : (/^V([3-9]|2\.[1-9])/.test(fw || '') ? 99 : 0); };
 let SN_CTX = null;
 async function loadSnState(serial, imei){
