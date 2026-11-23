@@ -418,7 +418,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B018 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B019 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -435,7 +435,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B018';
+  var BUILD = 'B019';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -587,12 +587,15 @@ $('tabAccess').onclick = () => showTab('access');
 
 // ---- Alerts (B014) ----
 let healthTimer = null;
+let HEALTH = [];
+const fwOf = imei => (HEALTH.find(h => h.imei === imei) || {}).boot_fw || null;
 const RST = { power_on:'power on / power cut', reset_pin:'reset pin', software:'software reset (e.g. after flashing)', watchdog:'watchdog (firmware hang)', window_watchdog:'window watchdog (firmware hang)', low_power:'low power', option_bytes:'option bytes' };
 const rstText = r => RST[r] || r || 'unknown';
 async function loadHealth(){
   if (!ME) return;
   let rows;
   try { rows = (await api('health')).rows; } catch(e){ return; }
+  HEALTH = rows;
   const names = Object.fromEntries((machinesCache||[]).map(m => [m.imei, machineName(m)]));
   const nm = i => esc(names[i] ? names[i] + ' (' + i + ')' : i);
   const now = Date.now();
@@ -1216,6 +1219,7 @@ function openCtl(){
   $('ctlImei').textContent = (MCFG && MCFG.serial ? MCFG.serial + ' · ' : '') + r.imei;
   CTL.line = [];
   document.body.classList.add('ctl-open'); $('ctl').classList.remove('hidden');
+  if (!HEALTH.length) loadHealth();
   buildCtl(); routeButtons(); setTestMode(TESTMODE); renderLive(); loadHist(); ctlMsg('', ''); renderLine(); loadProg(); loadPanelData();
   clearInterval(PG_T); PG_T = setInterval(() => { if (CTL && !document.hidden) loadPanelData(); }, 10000);
   clearInterval(CTL_PROG_T); CTL_PROG_T = setInterval(() => { if (CTL) { loadProg(); } }, 5000);
@@ -1244,6 +1248,9 @@ function renderLive(){
     <tr><td>DI overrides</td><td>${ovrTxt(s.dio)}</td></tr>
     <tr><td>T overrides</td><td>${ovrTxt(s.tso)}</td></tr>
     <tr><td>Ignored issues</td><td>${isb}</td></tr>
+    <tr><td>UI on machine</td><td>${(() => { const r = current && current.latest || {}; if (r.ui_pwr == null && r.ui_cb == null) return '<span class="mute">not sent (firmware before P2C5)</span>';
+        return `Power <b>${r.ui_pwr ? 'ON' : '<span style="color:var(--bad)">OFF</span>'}</b> · button on <b>${r.ui_cb ? 'cooling' : 'charging'}</b> side`; })()}</td></tr>
+    <tr><td>Firmware</td><td>${esc(fwOf(CTL.imei) || '–')}</td></tr>
     <tr><td>Data interval</td><td>${s.int ?? '–'} s · running for <span id="ctlUp">${s.up != null ? fmtLeft(s.up + (Date.now()-s.at)/1000) : '–'}</span></td></tr>
   </table>`;
   const k = $('ctlKeep');
@@ -1486,7 +1493,8 @@ function fwInputs(r){
     tm: { tm1: n((r.tm||[])[0]) ?? 15, dt2: n((r.tm||[])[1]) ?? 20, dt4: n((r.tm||[])[2]) ?? 60, dt5: n((r.tm||[])[3]) ?? 180 }, scenario: r.scenario };
 }
 // one decision with the inputs as they are; ov = overrides {di[5], t[5], hitemp, lowbat, sensor}; cb = UI button (true = cooling side, false = charging side, null = unknown)
-function fwDecide(inp, mode, manual, ov, cb){
+function fwDecide(inp, mode, manual, ov, cb, pwr){
+  if (pwr === false) return { scen:null, relays:'000000000', code:0, label:'UI OFF', why:'UI power is OFF on the machine: all outputs off, nothing runs' };
   const DI = i => ov.di[i-1] === '1' ? true : ov.di[i-1] === '0' ? false : !!inp.DI[i];
   const T = inp.T, SP = i => Number(inp.sp[i-1]), DP = i => Number(inp.dp[i-1]);
   // CheckIssues(): later checks win
@@ -1534,19 +1542,21 @@ function renderPred(){
   const s = CTL.st, r = current && current.latest || {};
   const inp = fwInputs({ ...r, sp: s.sp || r.sp, dp: s.dp || r.dp, dcv: s.dcv || r.dcv, tm: s.tm || r.tm });
   // UI button side, read from what the machine is doing now (unknown when idle / issue)
-  const cb = /CHARGING/.test(r.scenario || '') ? false : /COOLING|DEFROST/.test(r.scenario || '') ? true : null;
+  const cb = r.ui_cb != null ? !!r.ui_cb : /CHARGING/.test(r.scenario || '') ? false : /COOLING|DEFROST/.test(r.scenario || '') ? true : null;
   const now = Date.now();
   const ev = [], segs = [];
   const at = t => t <= now + 2000 ? 'now' : '+' + fmtLeft((t - now)/1000).replace(/ 0 s$/,'');
   const modeTxt = m => (MODES.find(x=>x[0]===m)||[m, m==='manual'?'Manual':m])[1];
   const NORMAL = () => ({ di:'nnnnn'.split(''), t:'nnnnn'.split(''), hitemp:false, lowbat:false, sensor:false });
   let mode = s.rm, relays = s.mr.split(''), ov = { di: s.dio.split(''), t: s.tso.split(''), hitemp: !!(s.isb&1), lowbat: !!(s.isb&2), sensor: !!(s.isb&4) };
-  const decide = () => fwDecide(inp, mode, relays, ov, cb);
+  const pwr = r.ui_pwr == null ? null : !!r.ui_pwr;
+  const decide = () => fwDecide(inp, mode, relays, ov, cb, pwr);
   const onList = rs => rs ? rs.split('').map((v,i)=> v==='1' ? rName(i+1) : '').filter(Boolean).join(', ') || 'all off' : '';
   const describe = () => {
     const d = decide();
     let t = `<b>${esc(modeTxt(mode))}</b> → `;
     if (d.scen === -1) return t + `<span class="warn">⚠ ISSUE, machine stopped: ${esc(d.why)}.</span> Relays: ${onList(d.relays)}.`;
+    if (d.label === 'UI OFF') return t + `<span class="warn">⏻ ${esc(d.why)}.</span>`;
     if (d.relays == null) return t + `<span class="mute">${esc(d.label)}: ${esc(d.why)}.</span>`;
     t += `${esc(d.label)}: ${onList(d.relays)}`;
     if (d.r1delay != null && d.relays[0] === '1') t += ` (R1 after TM1 = ${d.r1delay} s)`;
@@ -1595,9 +1605,9 @@ function renderPred(){
   const horizon = Math.max(now + 30*60e3, (segs.length ? segs[segs.length-1].t1 : now) + 10*60e3, segStart + 10*60e3);
   mark(horizon);
   CTL.pred = { segs, horizon, now };
-  const cbTxt = cb === null ? 'UI button side unknown (machine idle) – both sides checked' : cb ? 'UI button on cooling side' : 'UI button on charging side';
+  const cbTxt = (r.ui_cb != null ? 'UI button (sent by machine) on ' : 'UI button (guessed) on ') + (cb === null ? 'unknown side – both sides checked' : cb ? 'cooling side' : 'charging side') + (pwr === null ? '; UI power not sent (assumed ON)' : pwr ? '; UI power ON' : '; UI power OFF');
   $('ctlPred').innerHTML = ev.map(([t, h]) => `<div class="ev"><span class="tm">${at(t)}</span><span>${h}</span></div>`).join('') +
-    `<div class="note">Uses the firmware logic V2.0-P2C4 (CheckIssues, temperature logic, scenario logic, relay patterns) with today's readings held constant: T1–T5 ${[1,2,3,4,5].map(i => inp.T[i] == null ? '–' : inp.T[i]).join(' / ')} °C, DC2 ${inp.dc2 ?? '–'} V; ${cbTxt}. Real temperatures will move, so later steps can differ. Not in the data: UI ON/OFF (assumed ON).</div>`;
+    `<div class="note">Uses the firmware logic V2.0-P2C4 to P2C6 (CheckIssues, temperature logic, scenario logic, relay patterns) with today's readings held constant: T1–T5 ${[1,2,3,4,5].map(i => inp.T[i] == null ? '–' : inp.T[i]).join(' / ')} °C, DC2 ${inp.dc2 ?? '–'} V; ${cbTxt}. Real temperatures will move, so later steps can differ. Firmware on machine: ${esc(fwOf(CTL.imei) || '?')}${/P2C[4-6]/.test(fwOf(CTL.imei) || '') ? ' (same control logic as P2C4)' : ''}.</div>`;
   drawPanel();
 }
 
