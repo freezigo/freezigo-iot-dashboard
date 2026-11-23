@@ -216,7 +216,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B012 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B013 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -233,7 +233,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B012';
+  var BUILD = 'B013';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -269,7 +269,7 @@ const ERP_URL = 'https://prsdbdxxxllepcdfbtcb.supabase.co';          // login = 
 const ERP_KEY = 'sb_publishable_ECHJuSFgQG0NG60sYTEeCA_ImpwH2sR';    // publishable key, safe in a browser
 const IOT_API = 'https://yjzrhvigflxkmqaydcsf.supabase.co/functions/v1/iot-api';
 const ONLINE_SECONDS = 180;
-const LIST_REFRESH_MS = 30000;
+const LIST_REFRESH_MS = 10000;   // machine list: fetch new values every 10 s
 const COLORS = ['#2563eb','#d64545','#1f9d55','#d98a00','#7c3aed','#0891b2','#be185d','#65a30d','#475569'];
 const SECTIONS = [
   ['temps','Temperatures (temp1–temp5)'],
@@ -291,16 +291,26 @@ const fmtTs = d => new Date(d).toLocaleString('en-GB',{day:'2-digit',month:'shor
 const num = v => (v===null||v===undefined) ? '–' : Number(v).toFixed(1);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const has = s => ME?.sections?.includes(s);
-function ago(d){
+function agoText(d){
   if (!d) return '–';
-  const s = Math.max(0, (Date.now() - new Date(d))/1000);
-  if (s < 90) return Math.round(s)+' s ago';
-  if (s < 5400) return Math.round(s/60)+' min ago';
+  const s = Math.max(0, Math.floor((Date.now() - new Date(d))/1000));
+  if (s < 120) return s+' s ago';
+  if (s < 3600) return Math.floor(s/60)+' min '+(s%60)+' s ago';
   if (s < 172800) return Math.round(s/3600)+' h ago';
   return Math.round(s/86400)+' days ago';
 }
+// live "x s ago": the text is re-drawn every second from the time stored on the element (B013)
+const ago = d => `<span class="ago" data-t="${d ? new Date(d).toISOString() : ''}">${agoText(d)}</span>`;
+const stHtml = t => (Date.now() - new Date(t))/1000 < ONLINE_SECONDS
+  ? '<span class="dot" style="background:var(--ok)"></span>Online'
+  : '<span class="dot" style="background:var(--bad)"></span>Offline';
+setInterval(() => {
+  document.querySelectorAll('.ago').forEach(el => { if (el.dataset.t) el.textContent = agoText(el.dataset.t); });
+  document.querySelectorAll('.st').forEach(el => { if (el.dataset.t) el.innerHTML = stHtml(el.dataset.t); });
+}, 1000);
 const isOnline = r => (Date.now() - new Date(r.received_at))/1000 < ONLINE_SECONDS;
-const statusHtml = r => isOnline(r)
+const statusHtml = r => `<span class="st" data-t="${new Date(r.received_at).toISOString()}">${stHtml(r.received_at)}</span>`;
+const statusHtmlOld = r => isOnline(r)
   ? '<span class="dot" style="background:var(--ok)"></span>Online'
   : '<span class="dot" style="background:var(--bad)"></span>Offline';
 const alarmHtml = a => (a && a.length) ? a.map(x=>`<span class="chip">${esc(x)}</span>`).join('') : '<span class="chip ok">none</span>';
@@ -418,6 +428,15 @@ async function openMachine(imei){
   current.latest = r;
   $('dTitle').textContent = imei + (r && machineName(r) ? ' · ' + machineName(r) : '');
   $('dStatus').innerHTML = r ? statusHtml(r) + ` <span class="mute">· last message ${ago(r.received_at)}</span>` : '<span class="err">no access or no data</span>';
+  clearInterval(listTimer);
+  listTimer = setInterval(async () => {          // keep status, "last message" and latest values fresh (every 10 s)
+    if (!current || current.imei !== imei) return;
+    try {
+      machinesCache = (await api('machines')).rows;
+      const n = machinesCache.find(m => m.imei === imei);
+      if (n){ current.latest = n; $('dStatus').innerHTML = statusHtml(n) + ` <span class="mute">· last message ${ago(n.received_at)}</span>`; renderLatest(n); }
+    } catch(e){}
+  }, LIST_REFRESH_MS);
   renderLatest(r);
   setRange(24);
 }
