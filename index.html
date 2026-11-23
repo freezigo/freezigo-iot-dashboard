@@ -255,7 +255,7 @@
       <div class="row" style="margin-bottom:6px"><h3 style="margin:0">Graph: past and planned</h3><span class="flex1"></span>
         <select id="pgBack"><option value="3600">last 1 h</option><option value="7200" selected>last 2 h</option><option value="21600">last 6 h</option><option value="86400">last 24 h</option></select></div>
       <div class="pgwrap"><canvas id="cPanel"></canvas></div>
-      <div class="note">Left of the dashed "now" line = real data (temperatures, relays, inputs). Right = what is planned: <b style="color:#d64545">red</b> = relay on, <span style="background:repeating-linear-gradient(45deg,#cfd5df 0 3px,#fff 3px 6px);padding:0 6px">striped</span> = machine logic decides (Auto / forced mode), grey = off.</div>
+      <div class="note">Left of the dashed "now" line = real data (temperatures, relays, inputs). Right = predicted from the firmware logic: <b style="color:#d64545">red</b> = relay on, grey = off, <span style="background:repeating-linear-gradient(45deg,#cfd5df 0 3px,#fff 3px 6px);padding:0 6px">striped</span> = cannot be decided now (temperature inside its band, or sensor-fail cycling).</div>
     </div>
     <div class="ctlsec"><div id="ctlProg"><span class="mute" style="font-size:12px">No programs yet.</span></div></div>
     <div class="ctlsec linesec">
@@ -418,7 +418,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B017 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B018 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -435,7 +435,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B017';
+  var BUILD = 'B018';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -1472,65 +1472,106 @@ async function loadProg(){
   renderPred();
 }
 
-// ---------- prediction (rules of firmware V2.0-P2C4 as documented; auto-mode relay logic needs the logic code) ----------
-const ISSUES = { pressure:{ di:5, txt:'pressure (DI5)' }, voltage:{ di:3, txt:'voltage (DI3)' }, low_batt:{ key:'lowbat', txt:'low battery' }, lowbat:{ key:'lowbat', txt:'low battery' },
-  hitemp:{ key:'hitemp', txt:'high temperature' }, high_temp:{ key:'hitemp', txt:'high temperature' }, sensor:{ key:'sensor', txt:'sensor fail' }, sensor_fail:{ key:'sensor', txt:'sensor fail' } };
-function predIssues(alarms, ov){
-  // which machine issues still stop the machine with these overrides
-  const left = [], fixed = [];
-  for (const a of (alarms || [])){
-    const it = ISSUES[a]; if (!it){ left.push(a); continue; }
-    const ok = it.di ? ov.di[it.di-1] === '1' : !!ov[it.key];
-    (ok ? fixed : left).push(it.txt);
-  }
-  return { left, fixed };
+// ---------- prediction: firmware V2.0-P2C4 logic (app_freertos.c + remote_cmd.c), inputs held at their latest values ----------
+// Relay patterns from ChangeToScenario(): R1 = compressor (DO1, timed), R9 = 12 V out (DO4, battery logic, kept as now)
+const FW_PAT = { '-1':'0000000', 0:'0000000', 1:'1001010', 2:'0101100', 3:'1101001', 4:'0010101' };   // R2..R8 per scenario (SetOutput order)
+const FW_SCN = { '-1':'ISSUE', 0:'IDLE', 1:'CHARGING', 2:'COOLING', 3:'D_COOLING', 4:'DEFROST', 5:'MANUAL' };
+const FW_ISS = { 1:'pressure (DI5 open)', 2:'voltage (DI3 off)', 3:'discharge high temp (T5 > SP5)', 4:'low battery (DC2 < DCV2)', 5:'sensor fail T1 or no battery', 6:'sensor fail T2', 7:'sensor fail T3', 8:'sensor fail T4', 9:'sensor fail T5' };
+const FW_WAIT = (code, tm) => ({ 1:30, 2:60, 3: tm.dt5, 4: tm.dt4 }[code] || 0);   // wait after the issue clears (s)
+const FW_T2 = 300;          // defrost cycle length (sys.T2, fixed in firmware)
+function fwInputs(r){
+  const n = v => (v == null ? null : Number(v));
+  return { T: [null, n(r.temp1), n(r.temp2), n(r.temp3), n(r.temp4), n(r.temp5)], DI: [null, r.di1, r.di2, r.di3, r.di4, r.di5],
+    dc1: n(r.dc1), dc2: n(r.dc2), sp: r.sp || [], dp: r.dp || [], dcv: r.dcv || [], r9: !!r.r9,
+    tm: { tm1: n((r.tm||[])[0]) ?? 15, dt2: n((r.tm||[])[1]) ?? 20, dt4: n((r.tm||[])[2]) ?? 60, dt5: n((r.tm||[])[3]) ?? 180 }, scenario: r.scenario };
 }
+// one decision with the inputs as they are; ov = overrides {di[5], t[5], hitemp, lowbat, sensor}; cb = UI button (true = cooling side, false = charging side, null = unknown)
+function fwDecide(inp, mode, manual, ov, cb){
+  const DI = i => ov.di[i-1] === '1' ? true : ov.di[i-1] === '0' ? false : !!inp.DI[i];
+  const T = inp.T, SP = i => Number(inp.sp[i-1]), DP = i => Number(inp.dp[i-1]);
+  // CheckIssues(): later checks win
+  let code = 0;
+  if (!ov.sensor){ if (T[5] < -35) code = 9; if (T[4] < -35) code = 8; if (T[3] < -35) code = 7; if (T[2] < -35) code = 6; if (T[1] < -35) code = 5; }
+  if (inp.dc2 != null && inp.dcv[1] != null && inp.dc2 < Number(inp.dcv[1]) && !ov.lowbat) code = inp.dc2 < 20 ? 5 : 4;
+  if (!DI(3)) code = 2;
+  if (T[5] > SP(5) && !ov.hitemp) code = 3;
+  if (!DI(5)) code = 1;
+  const r9 = inp.r9 ? '1' : '0';
+  if (code >= 1 && code <= 4) return { scen:-1, relays:'0' + FW_PAT['-1'] + r9, code, label:'ISSUE', why: FW_ISS[code] };
+  if (code > 4) return { scen:null, relays:null, code, label:'SENSOR', why: FW_ISS[code] + ' (machine runs timed on/off cycles)' };
+  if (mode === 'manual') return { scen:5, relays: manual.join(''), code:0, label:'MANUAL', r1delay: inp.tm.tm1 };
+  const pat = sc => (sc >= 1 && sc <= 4 ? '1' : '0') + FW_PAT[sc] + r9;
+  const forced = { charging:1, thermal_cooling:2, d_cooling:3, defrost:4, standby:0 };
+  if (mode in forced){ const sc = forced[mode]; return { scen: sc, relays: pat(sc), code:0, label: FW_SCN[sc], r1delay: sc >= 1 && sc <= 3 ? inp.tm.tm1 : null, r1until: sc === 4 ? inp.tm.dt2 : null }; }
+  // auto: ProcessTemperatureLogic() + ProcessScenarioLogic(); a value inside its differential band keeps its last state (unknown here -> null)
+  const OT = i => ov.t[i-1] === '1' ? true : ov.t[i-1] === '0' ? false : null;
+  const band = (v, off, on) => v == null ? null : off(v) ? false : on(v) ? true : null;
+  const DT = [null,
+    OT(1) ?? band(T[1], v => v < SP(1), v => v > SP(1) + DP(1)),
+    OT(2) ?? (T[2] == null ? null : T[2] >= SP(2)),
+    OT(3) ?? band(T[3], v => v > SP(3), v => v < SP(3) - DP(3)),
+    OT(4) ?? band(T[3], v => v < SP(4), v => v > SP(4) + DP(4)),
+    OT(5) ?? band(T[5], v => v > SP(5), v => v < SP(5) - DP(5)) ];
+  const and = (...a) => a.includes(false) ? false : a.includes(null) ? null : true;
+  const not = v => v == null ? null : !v;
+  const choose = cbv => {
+    let sc = 0;
+    if (DI(1)){ if (!cbv){ if (and(DT[4], DT[5]) === true) sc = 1; else if (and(DT[4], DT[5]) === null) sc = null; }
+                else { const c = and(DT[1], DT[2], DT[5], not(DI(4))); sc = c === true ? 3 : c === null ? null : 0; } }
+    else if (cbv){ const c = and(DT[2], DT[1], DT[5], not(DI(4))); sc = c === true ? (DT[3] === true ? 2 : DT[3] === false ? 3 : null) : c === null ? null : 0; }
+    if (cbv && sc !== null){ const d = and(not(DT[2]), DT[5]); if (d === true) sc = 4; else if (d === null) sc = null; }
+    return sc;
+  };
+  let sc;
+  if (cb === null){ const a = choose(false), b = choose(true); sc = a === b ? a : null; }
+  else sc = choose(cb);
+  if (sc === null) return { scen:null, relays:null, code:0, label:'AUTO ?', why:'depends on temperatures inside their differential band or on the UI button' };
+  return { scen: sc, relays: pat(sc), code:0, label: 'AUTO→' + FW_SCN[sc], r1delay: sc >= 1 && sc <= 3 ? inp.tm.tm1 : null, r1until: sc === 4 ? inp.tm.dt2 : null };
+}
+
 function renderPred(){
   if (!CTL || !CTL.st || !$('ctlPred')) return;
   const s = CTL.st, r = current && current.latest || {};
+  const inp = fwInputs({ ...r, sp: s.sp || r.sp, dp: s.dp || r.dp, dcv: s.dcv || r.dcv, tm: s.tm || r.tm });
+  // UI button side, read from what the machine is doing now (unknown when idle / issue)
+  const cb = /CHARGING/.test(r.scenario || '') ? false : /COOLING|DEFROST/.test(r.scenario || '') ? true : null;
   const now = Date.now();
-  const tmv = (s.tm || [])[0];
   const ev = [], segs = [];
   const at = t => t <= now + 2000 ? 'now' : '+' + fmtLeft((t - now)/1000).replace(/ 0 s$/,'');
   const modeTxt = m => (MODES.find(x=>x[0]===m)||[m, m==='manual'?'Manual':m])[1];
   const NORMAL = () => ({ di:'nnnnn'.split(''), t:'nnnnn'.split(''), hitemp:false, lowbat:false, sensor:false });
   let mode = s.rm, relays = s.mr.split(''), ov = { di: s.dio.split(''), t: s.tso.split(''), hitemp: !!(s.isb&1), lowbat: !!(s.isb&2), sensor: !!(s.isb&4) };
-  const stops = () => mode !== 'standby' && predIssues(r.alarms, ov).left.length > 0;
+  const decide = () => fwDecide(inp, mode, relays, ov, cb);
+  const onList = rs => rs ? rs.split('').map((v,i)=> v==='1' ? rName(i+1) : '').filter(Boolean).join(', ') || 'all off' : '';
   const describe = () => {
-    const iss = predIssues(r.alarms, ov);
-    let t = '';
-    if (mode === 'auto') t = 'Auto: machine decides from temperatures and inputs (exact relays need the logic code).';
-    else if (mode === 'manual') t = `Manual: ${relays.map((v,i)=> v==='1' ? rName(i+1) : '').filter(Boolean).join(', ') || 'all relays off'}${relays[0]==='1' && tmv != null ? ` (R1 starts after TM1 = ${tmv} s)` : ''}.`;
-    else if (mode === 'defrost') t = 'Defrost: one cycle (ends by DT2 / T2), then Auto.';
-    else if (mode === 'standby') t = 'Standby: machine stopped and waiting.';
-    else t = `${modeTxt(mode)}: forced. Temperature conditions and DI1, DI4 are not used.`;
-    if (mode !== 'standby'){
-      if (iss.left.length) t += ` <span class="warn">⚠ Will stay stopped (ISSUE) because of: ${esc(iss.left.join(', '))}.</span>`;
-      else if (iss.fixed.length) t += ` <span class="okk">Issues bypassed by overrides: ${esc(iss.fixed.join(', '))}.</span>`;
-    }
-    return t;
+    const d = decide();
+    let t = `<b>${esc(modeTxt(mode))}</b> → `;
+    if (d.scen === -1) return t + `<span class="warn">⚠ ISSUE, machine stopped: ${esc(d.why)}.</span> Relays: ${onList(d.relays)}.`;
+    if (d.relays == null) return t + `<span class="mute">${esc(d.label)}: ${esc(d.why)}.</span>`;
+    t += `${esc(d.label)}: ${onList(d.relays)}`;
+    if (d.r1delay != null && d.relays[0] === '1') t += ` (R1 after TM1 = ${d.r1delay} s)`;
+    if (d.r1until != null) t += ` (R1 for DT2 = ${d.r1until} s, cycle ${FW_T2} s, then Auto)`;
+    return t + '.';
   };
-  // relays the machine will have: known for manual / standby / stopped by an issue, else decided by its logic (null)
-  const relayState = () => mode === 'manual' && !stops() ? relays.join('') : (mode === 'standby' || stops()) ? '000000000' : null;
-  let segStart = now;
-  const mark = t => { if (t > segStart){ segs.push({ t0: segStart, t1: t, mode, relays: relayState(), stop: stops() }); segStart = t; } };
+  let segStart = now, prev = decide();
+  const mark = t => { if (t > segStart){ const d = decide(); segs.push({ t0: segStart, t1: t, mode, ...d, startDelay: segs.length === 0 ? 0 : (segs[segs.length-1]._wait || 0) }); segStart = t; } };
   const apply = c => {
     if (c.c === 'mode') mode = c.v;
     if (c.c === 'relay'){ mode = 'manual'; relays = (c.r || relays.join('')).split(''); }
     if (c.c === 'ovr'){ if (c.clear) ov = NORMAL(); if (c.di) ov.di = c.di.split(''); if (c.t) ov.t = c.t.split(''); for (const k of ['hitemp','lowbat','sensor']) if (k in c) ov[k] = !!c[k]; }
   };
-  const fallback = (t, then) => { mark(t); mode = then; relays = '000000000'.split(''); ov = NORMAL();
+  // wait after an issue clears (issue loop keeps the machine stopped for 30 s / 60 s / DT5 / DT4)
+  const noteWait = () => { const before = segs.length ? segs[segs.length-1] : null; const d = decide(); if (before && before.scen === -1 && d.scen !== -1) before._wait = FW_WAIT(before.code, inp.tm); };
+  const fallback = (t, then) => { mark(t); mode = then; relays = '000000000'.split(''); ov = NORMAL(); noteWait();
     ev.push([t, `<b>Timer ends</b> → ${then === 'standby' ? 'Standby' : 'Auto'}; manual relays off; overrides back to normal. ${describe()}`]); };
-  ev.push([now, `<b>Now</b> · ${describe()}${r.alarms && r.alarms.length ? ` <span class="mute">Active alarms: ${esc(r.alarms.join(', '))}.</span>` : ''}`]);
+  ev.push([now, `<b>Now</b> · ${describe()}`]);
 
-  // what is planned: the line (in line mode), else the running program's remaining steps
   let plan = [], startT = now, endThen = $('ctlEnd').value, src = '';
   if (TESTMODE === 'line' && CTL.line.length){ plan = CTL.line; src = 'line'; }
   else if (CTL.prog){
     const p = CTL.prog, cur = p.steps[p.step];
     if (cur && p.step_done_at && cur.dur_s) startT = new Date(p.step_done_at).getTime() + cur.dur_s*1000;
     plan = p.steps.slice(p.step + (p.step_done_at ? 1 : 0)); endThen = p.end_then; src = 'program';
-    if (!plan.length && cur && p.step_done_at && cur.dur_s){ plan = []; }
   }
   let holdEnd = null, holdThen = null;
   const left = s.left - (now - s.at)/1000;
@@ -1541,19 +1582,22 @@ function renderPred(){
     const c = { ...st.cmd };
     const last = i === plan.length - 1;
     if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? endThen : 'standby'; }
-    mark(t); apply(c);
-    if (c.c === 'mode' && c.v === 'auto'){ holdEnd = null; }
+    mark(t); apply(c); noteWait();
+    if (c.c === 'mode' && c.v === 'auto') holdEnd = null;
     else if (['mode','relay','ovr','status'].includes(c.c)){ holdEnd = t + (c.for || 300)*1000; holdThen = c.then || 'auto'; }
     ev.push([t, `<b>${src === 'program' ? 'Program step' : 'Step'} ${i+1}</b> ${esc(st.label || c.c)} → ${c.c === 'sp' || c.c === 'interval' ? 'saved in machine.' : describe()}`]);
+    // remote defrost ends by itself after T2, then Auto
+    if (c.c === 'mode' && c.v === 'defrost' && decide().scen === 4){ const te = t + FW_T2*1000; if (!st.dur_s || st.dur_s*1000 > FW_T2*1000){ mark(te); mode = 'auto'; ev.push([te, `<b>Defrost cycle ends</b> → Auto. ${describe()}`]); } }
     t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
   });
   if (holdEnd) fallback(Math.max(holdEnd, t), holdThen);
-  else if (!plan.length) ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (or the machine logic in Auto).</span>']);
+  else if (!plan.length) ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (in Auto the machine follows its temperatures).</span>']);
   const horizon = Math.max(now + 30*60e3, (segs.length ? segs[segs.length-1].t1 : now) + 10*60e3, segStart + 10*60e3);
   mark(horizon);
   CTL.pred = { segs, horizon, now };
+  const cbTxt = cb === null ? 'UI button side unknown (machine idle) – both sides checked' : cb ? 'UI button on cooling side' : 'UI button on charging side';
   $('ctlPred').innerHTML = ev.map(([t, h]) => `<div class="ev"><span class="tm">${at(t)}</span><span>${h}</span></div>`).join('') +
-    `<div class="note">Based on the machine's documented rules${MCFG?.machine?.logic_version ? ' (logic ' + esc(MCFG.machine.logic_version) + ')' : ''} and the latest data. What Auto does with the relays needs the logic code.</div>`;
+    `<div class="note">Uses the firmware logic V2.0-P2C4 (CheckIssues, temperature logic, scenario logic, relay patterns) with today's readings held constant: T1–T5 ${[1,2,3,4,5].map(i => inp.T[i] == null ? '–' : inp.T[i]).join(' / ')} °C, DC2 ${inp.dc2 ?? '–'} V; ${cbTxt}. Real temperatures will move, so later steps can differ. Not in the data: UI ON/OFF (assumed ON).</div>`;
   drawPanel();
 }
 
@@ -1599,12 +1643,20 @@ function drawPanel(){
       if (ln.k.startsWith('di')) return;
       for (const sg of segs){
         const x1 = px(sg.t0), x2 = px(sg.t1); if (x2 <= x1) continue;
-        if (ln.k === 'mode'){ ctx.fillStyle = sg.stop ? '#f3b0b0' : sg.mode === 'auto' ? '#c7d7f5' : sg.mode === 'standby' ? '#d5d9e0' : '#f6c6a2';
-          ctx.globalAlpha = .75; ctx.fillRect(x1, y - 4, x2 - x1, 8); ctx.globalAlpha = 1;
-          if (x2 - x1 > 46){ ctx.fillStyle = '#1d2330'; ctx.textAlign = 'left'; ctx.fillText(sg.stop ? 'ISSUE' : sg.mode, x1 + 3, y); } continue; }
+        if (ln.k === 'mode'){ ctx.fillStyle = sg.scen === -1 ? '#f3b0b0' : sg.relays == null ? '#e3e6ec' : sg.mode === 'auto' ? '#c7d7f5' : sg.mode === 'standby' ? '#d5d9e0' : '#f6c6a2';
+          ctx.globalAlpha = .8; ctx.fillRect(x1, y - 5, x2 - x1, 10); ctx.globalAlpha = 1;
+          if (x2 - x1 > 46){ ctx.fillStyle = '#1d2330'; ctx.textAlign = 'left'; ctx.fillText(sg.label || sg.mode, x1 + 3, y); } continue; }
         const idx = Number(ln.k.slice(1)) - 1;
-        if (sg.relays == null){ ctx.fillStyle = hatch; ctx.fillRect(x1, y - 4, x2 - x1, 8); }
-        else { const on = sg.relays[idx] === '1'; ctx.fillStyle = on ? '#d64545' : '#c9ced8'; ctx.globalAlpha = .7; ctx.fillRect(x1, y - (on ? 4 : 1), x2 - x1, on ? 8 : 2); ctx.globalAlpha = 1; }
+        if (sg.relays == null){ ctx.fillStyle = hatch; ctx.fillRect(x1, y - 4, x2 - x1, 8); continue; }
+        // on/off pieces inside the segment: wait after an issue, R1 after TM1 / R1 only for DT2 in defrost
+        const pieces = [];
+        const t0 = sg.t0 + (sg.startDelay || 0)*1000;
+        if (t0 > sg.t0) pieces.push([sg.t0, Math.min(t0, sg.t1), false]);
+        let on = sg.relays[idx] === '1';
+        if (idx === 0 && on && sg.r1delay){ const tOn = t0 + sg.r1delay*1000; pieces.push([t0, Math.min(tOn, sg.t1), false]); if (tOn < sg.t1) pieces.push([tOn, sg.t1, true]); }
+        else if (idx === 0 && sg.r1until != null){ const tOff = t0 + sg.r1until*1000; pieces.push([t0, Math.min(tOff, sg.t1), true]); if (tOff < sg.t1) pieces.push([tOff, sg.t1, false]); }
+        else pieces.push([t0, sg.t1, on]);
+        for (const [a0, a1, v] of pieces){ if (a1 <= a0) continue; const p1 = px(a0), p2 = px(a1); ctx.fillStyle = v ? '#d64545' : '#c9ced8'; ctx.globalAlpha = .75; ctx.fillRect(p1, y - (v ? 4 : 1), Math.max(1, p2 - p1), v ? 8 : 2); ctx.globalAlpha = 1; }
       }
     });
     // now line
