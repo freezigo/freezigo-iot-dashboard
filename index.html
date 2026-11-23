@@ -87,6 +87,13 @@
   body.ctl-open main{margin-right:380px}
   @media (max-width:1100px){ body.ctl-open main{margin-right:0} }
   .ctl.full{width:100%;left:0}
+  .seg2{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .seg2 button{flex:1;border:none;border-radius:0;padding:7px 4px;font-size:12px}
+  .seg2 button.sel{background:var(--acc);color:#fff;font-weight:600}
+  #ctl.m-check .linesec{display:none}
+  #ctl .lineonly{display:none !important}
+  .pgwrap{position:relative;height:300px}
+  .ctl.full .pgwrap{height:420px}
   body.ctl-open.ctl-full main{display:none}
   .ctl .ctlbody{display:block}
   .ctl.full .ctlbody{display:grid;grid-template-columns:minmax(360px,460px) 1fr;gap:24px}
@@ -173,6 +180,11 @@
   <div class="ctlhead"><b>Control</b> <span id="ctlImei" class="mute"></span><span class="flex1"></span><button id="ctlFull" title="Full screen with prediction">⛶ Full screen</button><button id="ctlClose" title="Close">✕</button></div>
   <div class="ctlbody">
    <div class="ctlcol">
+    <div class="ctlsec">
+      <h3>How to send</h3>
+      <div class="seg2"><button id="tmCheck" class="sel">Check (send now)</button><button id="tmLine">Multiple commands (line)</button></div>
+      <div class="note" id="tmNote"></div>
+    </div>
     <div class="ctlsec" id="ctlLive"></div>
     <div id="ctlMsg" class="ctlmsg"></div>
 
@@ -240,6 +252,13 @@
    </div>
    <div class="ctlcol">
     <div class="ctlsec">
+      <div class="row" style="margin-bottom:6px"><h3 style="margin:0">Graph: past and planned</h3><span class="flex1"></span>
+        <select id="pgBack"><option value="3600">last 1 h</option><option value="7200" selected>last 2 h</option><option value="21600">last 6 h</option><option value="86400">last 24 h</option></select></div>
+      <div class="pgwrap"><canvas id="cPanel"></canvas></div>
+      <div class="note">Left of the dashed "now" line = real data (temperatures, relays, inputs). Right = what is planned: <b style="color:#d64545">red</b> = relay on, <span style="background:repeating-linear-gradient(45deg,#cfd5df 0 3px,#fff 3px 6px);padding:0 6px">striped</span> = machine logic decides (Auto / forced mode), grey = off.</div>
+    </div>
+    <div class="ctlsec"><div id="ctlProg"><span class="mute" style="font-size:12px">No programs yet.</span></div></div>
+    <div class="ctlsec linesec">
       <h3>Command line <span class="mute">(runs one after the other on the server; the browser can be closed)</span></h3>
       <div id="ctlLine"></div>
       <div class="row" style="margin-top:6px">
@@ -250,7 +269,6 @@
         <button class="primary" id="ctlLineRun">Run line</button>
       </div>
       <div class="note">Add steps with the "+ Line" buttons. For each step choose when the next step starts: "right away" (after the machine confirms) or "after 30 min" etc. Example: Charging → after 30 min → D-cooling → after 1 h → end: Standby.</div>
-      <div id="ctlProg" style="margin-top:8px"></div>
     </div>
     <div class="ctlsec">
       <h3>What will happen</h3>
@@ -400,7 +418,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B016 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B017 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -417,7 +435,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B016';
+  var BUILD = 'B017';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -1198,13 +1216,14 @@ function openCtl(){
   $('ctlImei').textContent = (MCFG && MCFG.serial ? MCFG.serial + ' · ' : '') + r.imei;
   CTL.line = [];
   document.body.classList.add('ctl-open'); $('ctl').classList.remove('hidden');
-  buildCtl(); renderLive(); loadHist(); ctlMsg('', ''); renderLine(); loadProg();
+  buildCtl(); routeButtons(); setTestMode(TESTMODE); renderLive(); loadHist(); ctlMsg('', ''); renderLine(); loadProg(); loadPanelData();
+  clearInterval(PG_T); PG_T = setInterval(() => { if (CTL && !document.hidden) loadPanelData(); }, 10000);
   clearInterval(CTL_PROG_T); CTL_PROG_T = setInterval(() => { if (CTL) { loadProg(); } }, 5000);
   setTimeout(() => { if (charts.main) { charts.main.resize(); renderScroll(); } }, 50);
 }
-let CTL_PROG_T = null;
+let CTL_PROG_T = null, PG_T = null, PG = null;
 function closeCtl(){
-  clearInterval(CTL_PROG_T);
+  clearInterval(CTL_PROG_T); clearInterval(PG_T);
   CTL = null; document.body.classList.remove('ctl-open', 'ctl-full'); $('ctl').classList.add('hidden'); $('ctl').classList.remove('full');
   setTimeout(() => { if (charts.main) { charts.main.resize(); renderScroll(); } }, 50);
 }
@@ -1358,6 +1377,36 @@ function spChanges(){
 }
 const spLabel = c => 'Setpoints ' + Object.keys(c).filter(k=>k!=='c').map(k=>k+'='+c[k]).join(', ');
 
+// ---------- Check (send now) / Multiple commands (line) ----------
+let TESTMODE = (() => { try { return localStorage.getItem('iot_testmode') || 'check'; } catch(e){ return 'check'; } })();
+function setTestMode(m){
+  TESTMODE = m; try { localStorage.setItem('iot_testmode', m); } catch(e){}
+  $('tmCheck').classList.toggle('sel', m === 'check'); $('tmLine').classList.toggle('sel', m === 'line');
+  $('ctl').classList.toggle('m-check', m === 'check');
+  $('tmNote').innerHTML = m === 'check'
+    ? 'Every button sends at once. Example: press D-cooling → the machine does D-cooling now.'
+    : 'Buttons add steps to the command line (right column). Nothing is sent until you press <b>Run line</b>.';
+  const lab = { ctlRelaySend:['Send relays','+ Add relays'], ctlOvrSend:['Send overrides','+ Add overrides'], ctlSpSend:['Send changed values','+ Add changed values'],
+    ctlIntSend:['Send','+ Add'], grpRelay:['Relays + DI + T','+ Relays + DI + T'], grpMode1:['Mode + DI + T','+ Mode + DI + T'], ctlOvrClear:['Clear all overrides','+ Clear all overrides'] };
+  for (const [id,[a,b]] of Object.entries(lab)) if ($(id)) $(id).textContent = m === 'check' ? a : b;
+  document.querySelectorAll('#ctlModes button[data-m]').forEach(x => x.title = m === 'check' ? 'Send now' : 'Add to line');
+  renderPred();
+}
+$('tmCheck').onclick = () => setTestMode('check');
+$('tmLine').onclick = () => setTestMode('line');
+// in "line" mode the main buttons add to the line instead of sending
+function routeButtons(){
+  const pairs = [['ctlRelaySend','ctlRelayLine'],['ctlOvrSend','ctlOvrLine'],['ctlSpSend','ctlSpLine'],['grpRelay','grpRelayLine'],['grpMode1','grpModeLine']];
+  for (const [a,b] of pairs){ const send = $(a).onclick, add = $(b).onclick; $(a).onclick = (e) => TESTMODE === 'line' ? add(e) : send(e); $(b).classList.add('lineonly'); }
+  const intSend = $('ctlIntSend').onclick;
+  $('ctlIntSend').onclick = () => { if (TESTMODE !== 'line') return intSend(); const v = Number($('ctlInt').value);
+    if (!Number.isInteger(v) || v < 30 || v > 300){ ctlMsg('bad','Interval must be a whole number from 30 to 300 s.'); return; } addLine({ c:'interval', sec:v }, `Data interval ${v} s`); };
+  const clr = $('ctlOvrClear').onclick;
+  $('ctlOvrClear').onclick = () => TESTMODE === 'line' ? addLine({ c:'ovr', clear:1 }, 'Clear all overrides') : clr();
+  $('ctlModes').querySelectorAll('button[data-ml]').forEach(x => x.classList.add('lineonly'));
+  $('ctlModes').querySelectorAll('button[data-m]').forEach(x => { const send = x.onclick; x.onclick = () => TESTMODE === 'line' ? addLine(modeCmd(x.dataset.m), modeLabel(x.dataset.m)) : send(); });
+}
+
 function wireLineButtons(){
   $('ctlRelayLine').onclick = () => addLine(relayCmd(), relayLabel());
   $('ctlOvrLine').onclick = () => { if (confirmRisky()) addLine(ovrCmd(), ovrLabel()); };
@@ -1441,11 +1490,13 @@ function renderPred(){
   const s = CTL.st, r = current && current.latest || {};
   const now = Date.now();
   const tmv = (s.tm || [])[0];
-  const ov0 = { di: s.dio.split(''), t: s.tso.split(''), hitemp: !!(s.isb&1), lowbat: !!(s.isb&2), sensor: !!(s.isb&4) };
-  const ev = [];
+  const ev = [], segs = [];
   const at = t => t <= now + 2000 ? 'now' : '+' + fmtLeft((t - now)/1000).replace(/ 0 s$/,'');
   const modeTxt = m => (MODES.find(x=>x[0]===m)||[m, m==='manual'?'Manual':m])[1];
-  const describe = (mode, ov, relays) => {
+  const NORMAL = () => ({ di:'nnnnn'.split(''), t:'nnnnn'.split(''), hitemp:false, lowbat:false, sensor:false });
+  let mode = s.rm, relays = s.mr.split(''), ov = { di: s.dio.split(''), t: s.tso.split(''), hitemp: !!(s.isb&1), lowbat: !!(s.isb&2), sensor: !!(s.isb&4) };
+  const stops = () => mode !== 'standby' && predIssues(r.alarms, ov).left.length > 0;
+  const describe = () => {
     const iss = predIssues(r.alarms, ov);
     let t = '';
     if (mode === 'auto') t = 'Auto: machine decides from temperatures and inputs (exact relays need the logic code).';
@@ -1459,40 +1510,117 @@ function renderPred(){
     }
     return t;
   };
-  // current
-  let mode = s.rm, relays = s.mr.split(''), ov = { ...ov0, di:[...ov0.di], t:[...ov0.t] };
-  ev.push([now, `<b>Now</b> · ${describe(mode, ov, relays)}${r.alarms && r.alarms.length ? ` <span class="mute">Active alarms: ${esc(r.alarms.join(', '))}.</span>` : ''}`]);
-  const apply = (c) => {
-    if (c.c === 'mode'){ mode = c.v; }
+  // relays the machine will have: known for manual / standby / stopped by an issue, else decided by its logic (null)
+  const relayState = () => mode === 'manual' && !stops() ? relays.join('') : (mode === 'standby' || stops()) ? '000000000' : null;
+  let segStart = now;
+  const mark = t => { if (t > segStart){ segs.push({ t0: segStart, t1: t, mode, relays: relayState(), stop: stops() }); segStart = t; } };
+  const apply = c => {
+    if (c.c === 'mode') mode = c.v;
     if (c.c === 'relay'){ mode = 'manual'; relays = (c.r || relays.join('')).split(''); }
-    if (c.c === 'ovr'){ if (c.clear){ ov = { di:'nnnnn'.split(''), t:'nnnnn'.split(''), hitemp:false, lowbat:false, sensor:false }; }
-      if (c.di) ov.di = c.di.split(''); if (c.t) ov.t = c.t.split(''); for (const k of ['hitemp','lowbat','sensor']) if (k in c) ov[k] = !!c[k]; }
+    if (c.c === 'ovr'){ if (c.clear) ov = NORMAL(); if (c.di) ov.di = c.di.split(''); if (c.t) ov.t = c.t.split(''); for (const k of ['hitemp','lowbat','sensor']) if (k in c) ov[k] = !!c[k]; }
   };
-  const fallback = (t, then) => { ev.push([t, `<b>Timer ends</b> → ${then === 'standby' ? 'Standby' : 'Auto'}; manual relays off; overrides back to normal.`]); mode = then; relays = '000000000'.split(''); ov = { di:'nnnnn'.split(''), t:'nnnnn'.split(''), hitemp:false, lowbat:false, sensor:false }; };
-  // plan: the line (or nothing) — the running program is shown separately
-  const plan = CTL.line;
-  if (!plan.length){
-    const left = s.left - (now - s.at)/1000;
-    if (left > 0){ fallback(now + left*1000, s.then); ev[ev.length-1][1] += ' ' + describe(mode, ov, relays); }
-    else ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (or the machine logic in Auto).</span>']);
-    if (CTL.prog) ev.push([now, `<span class="mute">A program (#${CTL.prog.id}) is running; see its steps above.</span>`]);
-  } else {
-    let t = now, holdEnd = null, holdThen = null;
-    plan.forEach((st, i) => {
-      if (holdEnd && holdEnd <= t){ fallback(holdEnd, holdThen); holdEnd = null; }
-      const c = { ...st.cmd };
-      const last = i === plan.length - 1;
-      if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? $('ctlEnd').value : 'standby'; }
-      apply(c);
-      if (c.for){ holdEnd = t + c.for*1000; holdThen = c.then || 'auto'; }
-      else if (['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){ holdEnd = t + 300e3; holdThen = c.then || 'auto'; }
-      ev.push([t, `<b>Step ${i+1}</b> ${esc(st.label)} → ${c.c === 'sp' || c.c === 'interval' ? 'saved in machine.' : describe(mode, ov, relays)}`]);
-      t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
-    });
-    if (holdEnd) fallback(Math.max(holdEnd, t), holdThen);
+  const fallback = (t, then) => { mark(t); mode = then; relays = '000000000'.split(''); ov = NORMAL();
+    ev.push([t, `<b>Timer ends</b> → ${then === 'standby' ? 'Standby' : 'Auto'}; manual relays off; overrides back to normal. ${describe()}`]); };
+  ev.push([now, `<b>Now</b> · ${describe()}${r.alarms && r.alarms.length ? ` <span class="mute">Active alarms: ${esc(r.alarms.join(', '))}.</span>` : ''}`]);
+
+  // what is planned: the line (in line mode), else the running program's remaining steps
+  let plan = [], startT = now, endThen = $('ctlEnd').value, src = '';
+  if (TESTMODE === 'line' && CTL.line.length){ plan = CTL.line; src = 'line'; }
+  else if (CTL.prog){
+    const p = CTL.prog, cur = p.steps[p.step];
+    if (cur && p.step_done_at && cur.dur_s) startT = new Date(p.step_done_at).getTime() + cur.dur_s*1000;
+    plan = p.steps.slice(p.step + (p.step_done_at ? 1 : 0)); endThen = p.end_then; src = 'program';
+    if (!plan.length && cur && p.step_done_at && cur.dur_s){ plan = []; }
   }
+  let holdEnd = null, holdThen = null;
+  const left = s.left - (now - s.at)/1000;
+  if (left > 0){ holdEnd = now + left*1000; holdThen = s.then; }
+  let t = startT;
+  plan.forEach((st, i) => {
+    if (holdEnd && holdEnd <= t){ fallback(holdEnd, holdThen); holdEnd = null; }
+    const c = { ...st.cmd };
+    const last = i === plan.length - 1;
+    if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? endThen : 'standby'; }
+    mark(t); apply(c);
+    if (c.c === 'mode' && c.v === 'auto'){ holdEnd = null; }
+    else if (['mode','relay','ovr','status'].includes(c.c)){ holdEnd = t + (c.for || 300)*1000; holdThen = c.then || 'auto'; }
+    ev.push([t, `<b>${src === 'program' ? 'Program step' : 'Step'} ${i+1}</b> ${esc(st.label || c.c)} → ${c.c === 'sp' || c.c === 'interval' ? 'saved in machine.' : describe()}`]);
+    t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
+  });
+  if (holdEnd) fallback(Math.max(holdEnd, t), holdThen);
+  else if (!plan.length) ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (or the machine logic in Auto).</span>']);
+  const horizon = Math.max(now + 30*60e3, (segs.length ? segs[segs.length-1].t1 : now) + 10*60e3, segStart + 10*60e3);
+  mark(horizon);
+  CTL.pred = { segs, horizon, now };
   $('ctlPred').innerHTML = ev.map(([t, h]) => `<div class="ev"><span class="tm">${at(t)}</span><span>${h}</span></div>`).join('') +
     `<div class="note">Based on the machine's documented rules${MCFG?.machine?.logic_version ? ' (logic ' + esc(MCFG.machine.logic_version) + ')' : ''} and the latest data. What Auto does with the relays needs the logic code.</div>`;
+  drawPanel();
+}
+
+// ---------- panel graph: real data (left of now) + planned (right of now) ----------
+async function loadPanelData(){
+  if (!CTL) return;
+  const back = Number($('pgBack').value) * 1000, to = new Date(), from = new Date(to - back);
+  const args = { imei: CTL.imei, from: from.toISOString(), to: new Date(to.getTime() + 60e3).toISOString() };
+  try {
+    const [se, st] = await Promise.all([ api('series', { ...args, bucket: bucketFor(from, to, 240) }), api('states', args) ]);
+    PG = { from: from.getTime(), series: se.rows, runs: toRuns(st.rows) };
+    drawPanel();
+  } catch(e){}
+}
+$('pgBack').onchange = () => loadPanelData();
+const PG_COL = TEMP_COL;
+function drawPanel(){
+  if (!CTL || !PG || !CTL.pred || !$('cPanel')) return;
+  const { segs, horizon, now } = CTL.pred;
+  const lanes = [{ k:'mode', label:'Mode' }, ...[1,2,3,4,5,6,7,8,9].map(n => ({ k:'r'+n, label: rName(n) })), ...[1,2,3,4,5].map(n => ({ k:'di'+n, label: diName(n) }))];
+  const LH = 13, padTop = lanes.length * LH + 8;
+  const ds = [1,2,3,4,5].map((n,i) => ({ label: tName(n), data: PG.series.map(r => ({ x: new Date(r.bucket).getTime(), y: r['temp'+n] })), borderColor: PG_COL[i], backgroundColor: PG_COL[i], pointRadius: 0, borderWidth: 1.6, spanGaps: 200e3 }));
+  const plug = { id:'pgl', afterDatasetsDraw(ch){
+    const { ctx, chartArea:a, scales:{ x } } = ch;
+    const px = v => Math.max(a.left, Math.min(a.right, x.getPixelForValue(v)));
+    const top0 = a.top - lanes.length*LH - 4;
+    ctx.save(); ctx.font = '10px Inter, Segoe UI, Arial, sans-serif'; ctx.textBaseline = 'middle'; ctx.lineCap = 'butt';
+    const hatch = (() => { const c = document.createElement('canvas'); c.width = c.height = 6; const g = c.getContext('2d'); g.strokeStyle = '#b9c1ce'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0,6); g.lineTo(6,0); g.stroke(); return ctx.createPattern(c, 'repeat'); })();
+    lanes.forEach((ln, i) => {
+      const y = top0 + i*LH + LH/2;
+      ctx.fillStyle = '#6b7383'; ctx.textAlign = 'right'; ctx.fillText(ln.label.length > 18 ? ln.label.slice(0,17)+'…' : ln.label, a.left - 4, y);
+      ctx.fillStyle = '#f3f5f8'; ctx.fillRect(a.left, y - LH/2 + 1, a.right - a.left, LH - 2);
+      // past
+      for (const r of PG.runs){
+        if (r.e < x.min || r.s > now) continue;
+        const x1 = px(r.s), x2 = px(Math.min(r.e, now));
+        if (ln.k === 'mode'){ const m = r.row.rmode; if (!m) continue; ctx.fillStyle = m === 'auto' ? '#c7d7f5' : m === 'standby' ? '#d5d9e0' : '#f6c6a2'; ctx.fillRect(x1, y - 4, Math.max(1, x2-x1), 8);
+          if (x2 - x1 > 40){ ctx.fillStyle = '#1d2330'; ctx.textAlign = 'left'; ctx.fillText(m, x1 + 3, y); } continue; }
+        const v = r.row[ln.k]; if (v == null) continue;
+        ctx.fillStyle = v ? '#d64545' : '#c9ced8'; ctx.fillRect(x1, y - (v ? 4 : 1), Math.max(1, x2-x1), v ? 8 : 2);
+      }
+      // planned
+      if (ln.k.startsWith('di')) return;
+      for (const sg of segs){
+        const x1 = px(sg.t0), x2 = px(sg.t1); if (x2 <= x1) continue;
+        if (ln.k === 'mode'){ ctx.fillStyle = sg.stop ? '#f3b0b0' : sg.mode === 'auto' ? '#c7d7f5' : sg.mode === 'standby' ? '#d5d9e0' : '#f6c6a2';
+          ctx.globalAlpha = .75; ctx.fillRect(x1, y - 4, x2 - x1, 8); ctx.globalAlpha = 1;
+          if (x2 - x1 > 46){ ctx.fillStyle = '#1d2330'; ctx.textAlign = 'left'; ctx.fillText(sg.stop ? 'ISSUE' : sg.mode, x1 + 3, y); } continue; }
+        const idx = Number(ln.k.slice(1)) - 1;
+        if (sg.relays == null){ ctx.fillStyle = hatch; ctx.fillRect(x1, y - 4, x2 - x1, 8); }
+        else { const on = sg.relays[idx] === '1'; ctx.fillStyle = on ? '#d64545' : '#c9ced8'; ctx.globalAlpha = .7; ctx.fillRect(x1, y - (on ? 4 : 1), x2 - x1, on ? 8 : 2); ctx.globalAlpha = 1; }
+      }
+    });
+    // now line
+    const xn = x.getPixelForValue(now);
+    ctx.strokeStyle = '#1d2330'; ctx.setLineDash([4,3]); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xn, top0); ctx.lineTo(xn, a.bottom); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = '#1d2330'; ctx.textAlign = 'center'; ctx.fillText('now', xn, a.bottom + 10);
+    ctx.restore();
+  }};
+  const span = horizon - PG.from;
+  if (charts.panel){ charts.panel.destroy(); }
+  charts.panel = new Chart($('cPanel'), { type:'line', data:{ datasets: ds }, plugins:[plug],
+    options:{ responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true, events:[],
+      layout:{ padding:{ top: padTop, left: 6 } },
+      scales:{ x:{ type:'linear', min: PG.from, max: horizon, ticks:{ maxTicksLimit:7, callback: v => new Date(v).toLocaleString('en-GB', span > 2*86400e3 ? {day:'2-digit',month:'short'} : {hour:'2-digit',minute:'2-digit'}) } },
+               y:{ title:{ display:true, text:'°C' }, afterFit: sc => { sc.width = Math.max(sc.width, 110); } } },
+      plugins:{ legend:{ display:true, position:'bottom', labels:{ boxWidth:10, font:{ size:10 } } }, tooltip:{ enabled:false } } } });
 }
 
 function ctlMsg(kind, text){ const m = $('ctlMsg'); m.className = 'ctlmsg' + (kind ? ' show ' + kind : ''); m.innerHTML = text; }
