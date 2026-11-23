@@ -413,12 +413,19 @@
           <div class="row"><select id="mImei" style="min-width:260px"></select><button id="mLink">Link</button><button id="mUnlink" class="danger">Unlink</button></div>
           <div class="note" style="font-size:12px;color:var(--mute);margin-top:4px">Example: modem of FZ-RF-0012 was replaced → pick the new IMEI → Link. Old data stays under the old IMEI and is shown in the history below.</div>
           <div id="mHist" style="margin-top:8px;font-size:12px"></div>
+          <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:8px">
+            <label>Serial number stored in the controller (firmware V2.0-P2C9 or newer)</label>
+            <div id="mSnState" style="font-size:12px"></div>
+            <div class="row" style="margin-top:6px"><button id="mSnWrite">Write serial to controller</button></div>
+            <div class="note" style="font-size:12px;color:var(--mute);margin-top:4px">The controller saves it in its flash and sends it at every boot. If the modem or SIM is changed later, the new IMEI is linked to this machine by itself. Example: write FZ-RF-0012 once; after a modem swap the data still shows under FZ-RF-0012.</div>
+            <div id="mSnMsg" style="font-size:12px;margin-top:4px"></div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B021 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B022 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -435,7 +442,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B021';
+  var BUILD = 'B022';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -1598,7 +1605,7 @@ function renderPred(){
     const c = { ...st.cmd };
     if (['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto') && !c.for) c.for = 300;
     const last = i === plan.length - 1;
-    // B021: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
+    // B022: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
     if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){
       const own = c.for || 300;
       if (own >= st.dur_s){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? endThen : (c.then || 'standby'); }
@@ -1612,7 +1619,7 @@ function renderPred(){
     if (c.c === 'mode' && c.v === 'defrost' && decide().scen === 4){ const te = t + FW_T2*1000; if (!st.dur_s || st.dur_s*1000 > FW_T2*1000){ mark(te); mode = 'auto'; ev.push([te, `<b>Defrost cycle ends</b> → Auto. ${describe()}`]); } }
     t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
   });
-  if (holdEnd) fallback(holdEnd, holdThen);   // B021: at the real end of the Run for time, even if that is before the line ends
+  if (holdEnd) fallback(holdEnd, holdThen);   // B022: at the real end of the Run for time, even if that is before the line ends
   else if (!plan.length) ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (in Auto the machine follows its temperatures).</span>']);
   const horizon = Math.max(now + 30*60e3, (segs.length ? segs[segs.length-1].t1 : now) + 10*60e3, segStart + 10*60e3);
   mark(horizon);
@@ -1799,7 +1806,7 @@ function editMachine(m){
   $('mSerial').value = m?.serial_no || ''; $('mSerial').disabled = !!m;
   $('mLabel').value = m?.label || ''; $('mLogic').value = m?.logic_version || ''; $('mNotes').value = m?.notes || '';
   const grid = (id, n, pre, vals, ex) => { $(id).innerHTML = Array.from({length:n}, (_,i) => `<label style="display:block"><span>${pre}${i+1}</span><input type="text" data-i="${i}" value="${esc((vals||[])[i] || '')}" placeholder="${ex[i] || ''}"></label>`).join(''); };
-  grid('mRelays', 9, 'R', m?.relay_names, ['Compressor','Condenser fan','Evaporator fan','Solenoid valve','Heater','','','','12 V out']);
+  grid('mRelays', 9, 'R', m?.relay_names, ['Compressor','','','','','','','','12 V out']);
   grid('mDis', 5, 'DI', m?.di_names, DEF_DI);
   grid('mTs', 5, 'T', m?.t_names, DEF_T);
   $('mMsg').className = 'err'; $('mMsg').textContent = '';
@@ -1809,9 +1816,51 @@ function editMachine(m){
     const owner = imei => (MADM.links.find(l => l.imei === imei && !l.to_ts) || {}).serial_no;
     $('mImei').innerHTML = '<option value="">— pick IMEI —</option>' + MADM.devices.map(d => `<option value="${esc(d.imei)}" ${d.imei===curImei?'selected':''}>${esc(d.imei)} · ${agoText(d.last_seen)}${owner(d.imei) && owner(d.imei)!==m.serial_no ? ' · now on ' + esc(owner(d.imei)) : ''}</option>`).join('');
     const hist = MADM.links.filter(l => l.serial_no === m.serial_no);
+    loadSnState(m.serial_no, curImei);
     $('mHist').innerHTML = hist.length ? '<b>IMEI history</b><br>' + hist.map(l => `${esc(l.imei)}: ${fmtT(l.from_ts)} to ${l.to_ts ? fmtT(l.to_ts) : 'now'} <span class="mute">(${esc((l.linked_by||'').split('@')[0])})</span>`).join('<br>') : '<span class="mute">No IMEI linked yet.</span>';
   }
 }
+// ---- B022: serial number inside the controller (firmware P2C9: {"c":"serial","v":"..."}, boot event "sn") ----
+const fwNum = fw => { const m = /P2C(\d+)/.exec(fw || ''); return m ? Number(m[1]) : (/^V([3-9]|2\.[1-9])/.test(fw || '') ? 99 : 0); };
+let SN_CTX = null;
+async function loadSnState(serial, imei){
+  SN_CTX = { serial, imei, ok: false };
+  $('mSnMsg').textContent = ''; $('mSnWrite').disabled = true;
+  if (!imei){ $('mSnState').innerHTML = '<span class="mute">Link an IMEI first.</span>'; return; }
+  $('mSnState').innerHTML = '<span class="mute">Reading last boot…</span>';
+  try {
+    const to = new Date(), from = new Date(to - 31 * 86400e3);
+    const r = await api('gaps', { imei, from: from.toISOString(), to: to.toISOString() });
+    if (!SN_CTX || SN_CTX.imei !== imei) return;
+    const b = (r.boots || [])[0];
+    if (!b){ $('mSnState').innerHTML = '<span class="mute">No boot seen in the last 31 days. Restart the controller once to read its firmware.</span>'; return; }
+    const n = fwNum(b.fw), sn = b.serial_no || '';
+    SN_CTX.ok = n >= 9;
+    $('mSnState').innerHTML = `Last boot ${fmtT(b.ts)} · firmware <b>${esc(b.fw || '?')}</b> · serial in controller: ` +
+      (n < 9 ? '<span class="mute">this firmware cannot store a serial (needs P2C9)</span>'
+        : sn ? (sn === serial ? `<b style="color:var(--ok)">${esc(sn)} ✓ matches</b>` : `<b style="color:#a15c00">${esc(sn)} (different from ${esc(serial)})</b>`)
+        : '<b style="color:#a15c00">not set</b>');
+    $('mSnWrite').disabled = !SN_CTX.ok;
+  } catch(e){ $('mSnState').innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+}
+$('mSnWrite').onclick = async () => {
+  if (!SN_CTX || !SN_CTX.ok) return;
+  const { serial, imei } = SN_CTX;
+  $('mSnWrite').disabled = true; $('mSnMsg').className = ''; $('mSnMsg').textContent = `Sending ${serial} to ${imei}…`;
+  try {
+    const id = (await api('cmd_send', { imei, cmd: { c:'serial', v: serial } })).command.id;
+    const t0 = Date.now();
+    while (Date.now() - t0 < 90000){
+      await new Promise(r => setTimeout(r, 2000));
+      const c = (await api('cmd_get', { imei, id })).command;
+      if (c.status === 'done'){ $('mSnMsg').className = 'okmsg'; $('mSnMsg').textContent = `✓ Controller saved ${serial}. It will send it at every boot.`; await loadMachinesAdmin(); return; }
+      if (c.status === 'failed' || c.status === 'superseded'){ $('mSnMsg').className = 'err'; $('mSnMsg').textContent = `✕ ${c.error || c.status}`; $('mSnWrite').disabled = false; return; }
+      $('mSnMsg').textContent = `${c.status === 'sent' ? 'Sent, waiting for reply' : 'Waiting for machine'}…`;
+    }
+    $('mSnMsg').textContent = 'No reply yet. The command stays queued and goes when the machine is online.';
+  } catch(e){ $('mSnMsg').className = 'err'; $('mSnMsg').textContent = e.message; }
+  $('mSnWrite').disabled = false;
+};
 $('mNew').onclick = () => editMachine(null);
 $('mSave').onclick = async () => {
   const vals = id => [...$(id).querySelectorAll('input')].map(i => i.value.trim());
