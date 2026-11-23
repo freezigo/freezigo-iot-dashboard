@@ -44,6 +44,12 @@
   .scroll{overflow-x:auto}
   .kv td:first-child{color:var(--mute)}
   .hidden{display:none !important}
+  .alert{border-color:#f3b4b4;background:#fff6f6}
+  .alert.info{border-color:#f5d48a;background:#fffaf0}
+  .alert div{margin:3px 0}
+  .tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:12px;background:#eef1f6}
+  .tag.bad{background:#fdecec;color:var(--bad)}
+  .tag.warn{background:#fff1d6;color:#a15c00}
   .form label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}
   .form .note{font-size:12px;color:var(--mute);margin:-6px 0 10px}
   .checks label{display:inline-flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;margin:0 14px 8px 0}
@@ -111,6 +117,8 @@
 </div>
 
 <main id="app" class="hidden">
+  <!-- ALERTS (B014): machines offline now, and reboots in the last 24 h -->
+  <div id="alertBox" class="card alert hidden"></div>
   <!-- MACHINE LIST -->
   <section id="listView">
     <div class="card">
@@ -158,6 +166,12 @@
     </div>
     <div class="grid">
       <div class="card"><h2>Latest values</h2><div class="scroll"><table class="kv" id="setTable"></table></div></div>
+      <div class="card"><h2>Reboots and data gaps <span class="mute" style="font-weight:400;font-size:12px">(in the chosen range)</span></h2>
+        <div class="scroll" style="max-height:340px;overflow-y:auto"><table>
+          <thead><tr><th>From</th><th>To</th><th>Length</th><th>Cause</th></tr></thead><tbody id="gapRows"></tbody>
+        </table></div>
+        <div class="mute" style="font-size:12px;margin-top:6px"><span class="tag warn">Reboot</span> = the controller restarted (boot message received, or its uptime counter started again). <span class="tag bad">No data</span> = nothing received; the controller kept running but had no network, or the data was lost on the way.</div>
+      </div>
       <div class="card sec-events"><h2>Alarm and settings history</h2>
         <div class="scroll" style="max-height:340px;overflow-y:auto"><table>
           <thead id="evHead"></thead><tbody id="evRows"></tbody>
@@ -216,7 +230,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B013 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B014 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -233,7 +247,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B013';
+  var BUILD = 'B014';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -301,15 +315,17 @@ function agoText(d){
 }
 // live "x s ago": the text is re-drawn every second from the time stored on the element (B013)
 const ago = d => `<span class="ago" data-t="${d ? new Date(d).toISOString() : ''}">${agoText(d)}</span>`;
-const stHtml = t => (Date.now() - new Date(t))/1000 < ONLINE_SECONDS
+// offline after max(180 s, 3 x data interval) (B014: interval can be 30 to 300 s)
+const limitOf = r => Math.max(ONLINE_SECONDS, 3 * (Number(r?.interval_s) || 30));
+const stHtml = (t, lim = ONLINE_SECONDS) => (Date.now() - new Date(t))/1000 < lim
   ? '<span class="dot" style="background:var(--ok)"></span>Online'
   : '<span class="dot" style="background:var(--bad)"></span>Offline';
 setInterval(() => {
   document.querySelectorAll('.ago').forEach(el => { if (el.dataset.t) el.textContent = agoText(el.dataset.t); });
-  document.querySelectorAll('.st').forEach(el => { if (el.dataset.t) el.innerHTML = stHtml(el.dataset.t); });
+  document.querySelectorAll('.st').forEach(el => { if (el.dataset.t) el.innerHTML = stHtml(el.dataset.t, Number(el.dataset.l) || ONLINE_SECONDS); });
 }, 1000);
-const isOnline = r => (Date.now() - new Date(r.received_at))/1000 < ONLINE_SECONDS;
-const statusHtml = r => `<span class="st" data-t="${new Date(r.received_at).toISOString()}">${stHtml(r.received_at)}</span>`;
+const isOnline = r => (Date.now() - new Date(r.received_at))/1000 < limitOf(r);
+const statusHtml = r => `<span class="st" data-t="${new Date(r.received_at).toISOString()}" data-l="${limitOf(r)}">${stHtml(r.received_at, limitOf(r))}</span>`;
 const statusHtmlOld = r => isOnline(r)
   ? '<span class="dot" style="background:var(--ok)"></span>Online'
   : '<span class="dot" style="background:var(--bad)"></span>Offline';
@@ -349,6 +365,7 @@ async function startInner(){
   document.querySelectorAll('.sec-events').forEach(el=>el.classList.toggle('hidden', !has('alarms') && !has('settings')));
   const imei = new URLSearchParams(location.search).get('imei');
   imei ? openMachine(imei) : showList();
+  startHealth();   // B014 alerts
 }
 function showLogin(msg, email){
   $('login').classList.remove('hidden'); $('app').classList.add('hidden'); $('tabs').classList.add('hidden');
@@ -367,7 +384,7 @@ $('googleBtn').onclick = async () => {
   if (error) $('loginErr').textContent = error.message;
 };
 $('pass').addEventListener('keydown', e => { if (e.key==='Enter') $('loginBtn').click(); });
-$('logoutBtn').onclick = async () => { clearInterval(listTimer); await sb.auth.signOut(); ME = null; showLogin(''); };
+$('logoutBtn').onclick = async () => { clearInterval(listTimer); clearInterval(healthTimer); await sb.auth.signOut(); ME = null; showLogin(''); };
 
 // ---- Tabs ----
 function showTab(name){
@@ -378,6 +395,49 @@ function showTab(name){
 }
 $('tabMachines').onclick = () => { showTab('machines'); showList(); };
 $('tabAccess').onclick = () => showTab('access');
+
+// ---- Alerts (B014) ----
+let healthTimer = null;
+const RST = { power_on:'power on / power cut', reset_pin:'reset pin', software:'software reset (e.g. after flashing)', watchdog:'watchdog (firmware hang)', window_watchdog:'window watchdog (firmware hang)', low_power:'low power', option_bytes:'option bytes' };
+const rstText = r => RST[r] || r || 'unknown';
+async function loadHealth(){
+  if (!ME) return;
+  let rows;
+  try { rows = (await api('health')).rows; } catch(e){ return; }
+  const names = Object.fromEntries((machinesCache||[]).map(m => [m.imei, machineName(m)]));
+  const nm = i => esc(names[i] ? names[i] + ' (' + i + ')' : i);
+  const now = Date.now();
+  const off = rows.filter(r => r.last_rx && (now - new Date(r.last_rx))/1000 >= limitOf(r));
+  const reb = rows.filter(r => r.last_boot && (now - new Date(r.last_boot)) < 24*3600e3);
+  const box = $('alertBox');
+  let h = '';
+  off.forEach(r => { h += `<div>⚠ <b>${nm(r.imei)}</b> is <b style="color:var(--bad)">offline</b>: no data for ${ago(r.last_rx)} (last message ${fmtTs(r.last_rx)}).` +
+    (r.last_boot ? ` <span class="mute">Last boot ${fmtTs(r.last_boot)}, ${esc(rstText(r.boot_reason))}.</span>` : '') + `</div>`; });
+  reb.forEach(r => { h += `<div>↻ <b>${nm(r.imei)}</b> rebooted at ${fmtTs(r.last_boot)} <span class="mute">(${esc(rstText(r.boot_reason))}, firmware ${esc(r.boot_fw||'?')}; ${r.boots_24h} boot(s) and ${r.gaps_24h} data gap(s) in 24 h)</span></div>`; });
+  box.innerHTML = h ? '<h2 style="margin-bottom:6px">Alerts</h2>' + h : '';
+  box.classList.toggle('hidden', !h);
+  box.classList.toggle('info', !off.length);
+  document.title = (off.length ? `(${off.length} offline) ` : '') + 'Freezigo IoT Dashboard';
+}
+function startHealth(){ loadHealth(); clearInterval(healthTimer); healthTimer = setInterval(loadHealth, 30000); }
+
+// ---- Reboots and data gaps for one machine (B014) ----
+async function loadGaps(from, to){
+  const tb = $('gapRows');
+  if (!current) return;
+  try {
+    const r = await api('gaps', { imei: current.imei, from: new Date(from).toISOString(), to: new Date(to).toISOString() });
+    const items = r.gaps.map(g => ({ s: g.gap_start, e: g.gap_end, len: g.gap_s, cause: g.cause, why: g.boot_reason }));
+    // a boot that is not inside any gap (short restart) still gets its own line
+    r.boots.forEach(b => { if (!items.some(i => i.cause === 'reboot' && new Date(b.ts) > new Date(i.s) && new Date(b.ts) <= new Date(i.e)))
+      items.push({ s: b.ts, e: b.ts, len: null, cause: 'reboot', why: b.reset_reason }); });
+    items.sort((a, b) => new Date(b.s) - new Date(a.s));
+    const dur = s => s == null ? '–' : s < 120 ? s + ' s' : s < 7200 ? Math.round(s/60) + ' min' : (s/3600).toFixed(1) + ' h';
+    tb.innerHTML = items.length ? items.map(i => `<tr><td>${fmtTs(i.s)}</td><td>${i.len == null ? '–' : fmtTs(i.e)}</td><td>${dur(i.len)}</td><td>${i.cause === 'reboot'
+      ? `<span class="tag warn">Reboot</span> <span class="mute">${esc(rstText(i.why))}</span>` : '<span class="tag bad">No data</span>'}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="mute">No reboots or gaps in this range.</td></tr>';
+  } catch(e){ tb.innerHTML = `<tr><td colspan="4" class="err">${esc(e.message)}</td></tr>`; }
+}
 
 // ---- Machine list ----
 function listHead(){
@@ -505,6 +565,7 @@ function buildPicker(){
 // Data is fetched for a wider span than the window (one window-length each side), so scrolling is instant.
 let LOADSEQ = 0, DRAG_VIEW = null;
 async function loadDetail(from, to){
+  loadGaps(from, to);   // B014
   const seq = ++LOADSEQ;
   const len = to - from, SPAN = 31 * 86400e3;
   const pad = Math.max(0, Math.min(len, (SPAN - len) / 2));
