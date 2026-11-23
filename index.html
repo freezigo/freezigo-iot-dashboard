@@ -6,31 +6,44 @@
 <title>Freezigo IoT Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
-  :root{--bg:#f5f6f8;--card:#fff;--ink:#1d2330;--mute:#6b7383;--line:#e3e6ec;--ok:#1f9d55;--bad:#d64545;--acc:#2563eb}
+  :root{
+    /* ===== DESIGN TOKENS (B023) – change these to restyle the whole dashboard ===== */
+    --font:Inter,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --fs:14px;
+    --bg:#f5f6f8; --card:#fff; --ink:#1d2330; --mute:#6b7383; --line:#e3e6ec;
+    --ok:#1f9d55; --bad:#d64545; --acc:#2563eb;
+    --radius:10px; --radius-sm:6px; --soft:#eef1f6; --hover:#f0f4ff;
+    /* graph */
+    --t1:#2563eb; --t2:#d64545; --t3:#1f9d55; --t4:#d98a00; --t5:#7c3aed;   /* T1..T5 lines */
+    --dc1:#0891b2; --dc2:#475569;                                           /* DC1, DC2 lines */
+    --live:#1f9d55; --offline:#e8890c;                                      /* Data row dots */
+    --on:#d64545; --off:#c9ced8;                                            /* relay / DI on and off */
+    --lane-text:#6b7383; --gap:rgba(107,115,131,.12);                       /* row labels, no-data bands */
+    --tip-bg:rgba(29,35,48,.95); --tip-ink:#fff;                            /* details box */
+  }
   *{box-sizing:border-box}
-  body{margin:0;font-family:Inter,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  body{margin:0;font-family:var(--font);background:var(--bg);color:var(--ink);font-size:var(--fs)}
   header{display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
   header h1{font-size:17px;margin:0;font-weight:600}
   header small{color:var(--mute)}
   #updBtn.new{background:#fde2e2;border-color:#d64545;color:#8a1c1c;font-weight:600}
   .flex1{flex:1}
   button,select,input{font:inherit}
-  button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:6px 12px;cursor:pointer}
+  button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:var(--radius-sm);padding:6px 12px;cursor:pointer}
   button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
   button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
   button.danger{color:var(--bad)}
   main{padding:20px;max-width:1300px;margin:0 auto}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
   .card h2{font-size:15px;margin:0 0 12px;font-weight:600}
   table{width:100%;border-collapse:collapse}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:top}
   th{color:var(--mute);font-weight:500;font-size:12px}
   tbody tr.click{cursor:pointer}
-  tbody tr.click:hover{background:#f0f4ff}
+  tbody tr.click:hover{background:var(--hover)}
   .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
   .chip{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;margin:1px 2px;background:#fdecec;color:var(--bad)}
   .chip.ok{background:#e7f6ee;color:var(--ok)}
-  .chip.n{background:#eef1f6;color:var(--ink)}
+  .chip.n{background:var(--soft);color:var(--ink)}
   .mute{color:var(--mute)}
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -44,12 +57,12 @@
   .scroll{overflow-x:auto}
   .kv td:first-child{color:var(--mute)}
   .hidden{display:none !important}
-  .alert{border-color:#f3b4b4;background:#fff6f6}
-  .alert.info{border-color:#f5d48a;background:#fffaf0}
+  .alert{border-color:#f3b4b4;background:var(--card)6f6}
+  .alert.info{border-color:#f5d48a;background:var(--card)af0}
   .alert div{margin:3px 0}
-  .tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:12px;background:#eef1f6}
+  .tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:12px;background:var(--soft)}
   .tag.bad{background:#fdecec;color:var(--bad)}
-  .tag.warn{background:#fff1d6;color:#a15c00}
+  .tag.warn{background:var(--card)1d6;color:#a15c00}
   .form label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px}
   .form .note{font-size:12px;color:var(--mute);margin:-6px 0 10px}
   .checks label{display:inline-flex;gap:6px;align-items:center;color:var(--ink);font-size:14px;margin:0 14px 8px 0}
@@ -61,18 +74,18 @@
   .pick .sw{display:inline-block;width:10px;height:10px;border-radius:2px}
   .chartwrap{position:relative;height:480px;user-select:none}
   .sbwrap{margin-top:4px}
-  .sbtrack{position:relative;height:14px;background:#eef1f6;border:1px solid var(--line);border-radius:7px;cursor:pointer;touch-action:none}
+  .sbtrack{position:relative;height:14px;background:var(--soft);border:1px solid var(--line);border-radius:7px;cursor:pointer;touch-action:none}
   .sbthumb{position:absolute;top:1px;bottom:1px;min-width:14px;background:#9db4e8;border-radius:6px;cursor:grab}
   .sbthumb:hover,.sbthumb.drag{background:#2563eb}
   .sbthumb.drag{cursor:grabbing}
   .sblabels{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);margin-top:2px}
   .sblabels #sbMid{color:var(--ink);font-weight:600}
   .stats{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:13px;margin:2px 0 8px}
-  .stats .bar{display:flex;width:220px;height:10px;border-radius:5px;overflow:hidden;background:#e3e6ec}
+  .stats .bar{display:flex;width:220px;height:10px;border-radius:5px;overflow:hidden;background:var(--line)}
   .stats .bar i{display:block;height:100%}
   .stats b{font-weight:600}
   .stats .sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px}
-  .tg{border:1px solid var(--line);background:#fff;border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--ink)}
+  .tg{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:3px 9px;font-size:12px;cursor:pointer;color:var(--ink)}
   .tg.on,.tg.on:hover{background:#fde2e2;border-color:#e8a0a0;color:var(--ink)}
   .tg.all{font-weight:600;color:var(--mute)}
   .hoverbox .grid5{display:grid;grid-template-columns:repeat(5,auto);gap:0 12px;margin:6px 0}
@@ -80,10 +93,11 @@
   .hoverbox .boxes{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
   .hoverbox .bx{border-radius:5px;padding:1px 6px;font-size:11px;background:#3a4252;color:#aab1bf}
   .hoverbox .bx.on{background:#f3b7b7;color:#5a0d0d;font-weight:600}
-  .hoverbox{position:absolute;pointer-events:none;background:rgba(29,35,48,.95);color:#fff;font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;min-width:250px;max-width:340px;z-index:5;white-space:normal}
+  .hoverbox{position:absolute;pointer-events:none;background:var(--tip-bg);color:var(--tip-ink);font-size:12px;line-height:1.45;padding:10px 12px;border-radius:8px;min-width:250px;max-width:340px;z-index:5;white-space:normal}
   .hoverbox .h{font-weight:600;margin-bottom:4px}
+  .hoverbox.pinned{pointer-events:auto;user-select:text;box-shadow:0 6px 20px rgba(0,0,0,.25)}
   .hoverbox .on{color:#ff8a8a;font-weight:600}
-  .ctl{position:fixed;top:0;right:0;bottom:0;width:380px;background:#fff;border-left:1px solid var(--line);box-shadow:-6px 0 18px rgba(0,0,0,.08);z-index:20;display:flex;flex-direction:column;font-size:13px}
+  .ctl{position:fixed;top:0;right:0;bottom:0;width:380px;background:var(--card);border-left:1px solid var(--line);box-shadow:-6px 0 18px rgba(0,0,0,.08);z-index:20;display:flex;flex-direction:column;font-size:13px}
   body.ctl-open main{margin-right:380px}
   @media (max-width:1100px){ body.ctl-open main{margin-right:0} }
   .ctl.full{width:100%;left:0}
@@ -101,7 +115,7 @@
   .namegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:10px}
   .namegrid input{margin:0 !important;font-size:12px;padding:5px !important}
   .namegrid span{font-size:11px;color:var(--mute)}
-  .lstep{display:flex;gap:6px;align-items:center;padding:5px 6px;border:1px solid var(--line);border-radius:6px;margin-bottom:4px;font-size:12px;background:#fafbfc}
+  .lstep{display:flex;gap:6px;align-items:center;padding:5px 6px;border:1px solid var(--line);border-radius:6px;margin-bottom:4px;font-size:12px;background:var(--soft)}
   .lstep .n{font-weight:600;color:var(--mute);width:16px}
   .lstep .t{flex:1}
   .lstep select{font-size:11px}
@@ -131,14 +145,14 @@
   .tri .seg button.sel.f1{background:#d64545}
   .spgrid{display:grid;grid-template-columns:44px repeat(5,1fr);gap:4px;align-items:center}
   .spgrid input{width:100%;padding:3px 4px;border:1px solid var(--line);border-radius:4px;font-size:12px}
-  .spgrid input.chg{background:#fff6cc;border-color:#d9a400}
+  .spgrid input.chg{background:var(--card)6cc;border-color:#d9a400}
   .spgrid span{font-size:11px;color:var(--mute)}
   .ctlmsg{margin:8px 0;padding:8px;border-radius:6px;font-size:12px;display:none}
   .ctlmsg.show{display:block}
   .ctlmsg.wait{background:#eef3ff;color:#1e3a8a}
   .ctlmsg.ok{background:#e7f6ee;color:#14532d}
   .ctlmsg.bad{background:#fdecec;color:#8a1c1c}
-  .ctlmsg.grey{background:#eef1f6;color:var(--mute)}
+  .ctlmsg.grey{background:var(--soft);color:var(--mute)}
   .live td{padding:2px 6px 2px 0;border:none;font-size:12px;white-space:normal}
   .live td:first-child{color:var(--mute);width:110px}
   .ctlhist{max-height:220px;overflow-y:auto;font-size:11px}
@@ -320,7 +334,7 @@
       <div class="row" style="margin-bottom:6px"><h2 style="margin:0">Graph</h2><span class="flex1"></span>
         <button class="tg" id="zoomBack" title="Go back one zoom step (or double-click the graph)">Zoom out</button>
         <button class="tg" id="zoomReset" title="Back to the chosen range">Reset zoom</button>
-        <button class="tg" id="optHover">Details on hover</button>
+        <button class="tg" id="optHover" title="On: details follow the mouse. Off: click a point on the graph to see the details there; click anywhere outside the graph to close.">Details on hover</button>
       </div>
       <div id="pick" class="pick"></div>
       <div id="dStats" class="stats"></div>
@@ -425,7 +439,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B022 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B023 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -442,7 +456,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B022';
+  var BUILD = 'B023';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -530,6 +544,7 @@ const toLocalInput = d => { const x = new Date(d); x.setMinutes(x.getMinutes()-x
 const machineName = r => [r.label, r.serial_no].filter(Boolean).join(' · ');
 
 async function api(op, args = {}){
+  if (window.FZ_DEMO) return window.FZ_DEMO.api(op, args);     // B023: design copy with sample data, no server
   const { data:{ session } } = await sb.auth.getSession();
   if (!session) throw Object.assign(new Error('Log in first.'), { status:401 });
   const r = await fetch(IOT_API, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token }, body: JSON.stringify({ op, ...args }) });
@@ -545,7 +560,7 @@ async function start(){
   try { await startInner(); } finally { starting = false; }
 }
 async function startInner(){
-  const { data:{ session } } = await sb.auth.getSession();
+  const { data:{ session } } = window.FZ_DEMO ? { data:{ session:{ user:{ email:'demo@freezigo.in' } } } } : await sb.auth.getSession();
   if (!session) return showLogin('');
   try { ME = (await api('me')).me; }
   catch(e){ return showLogin(e.message, session.user.email); }
@@ -725,11 +740,23 @@ function bucketFor(from, to, maxPts = 500){
   return steps.find(s => secs/s <= maxPts) || 86400;
 }
 // ===== One combined graph (B004) =====
+// B023: width in px of the longest row label, so long names (e.g. "DI3 Voltage OK") are never cut off
+const labelW = (labels, px) => { const c = labelW.c || (labelW.c = document.createElement('canvas').getContext('2d')); c.font = px + 'px ' + UI_COL.font; return Math.ceil(Math.max(0, ...labels.map(t => c.measureText(String(t)).width))); };
 const LANE_H = 16;                          // height of one on/off row at the top
 const SAMPLE_S = 30;                        // a single sample is drawn as 30 s long
-const TEMP_COL = ['#2563eb','#d64545','#1f9d55','#d98a00','#7c3aed'];
-const DC_COL = ['#0891b2','#475569'];
-const DATA_COL = { live:'#1f9d55', offline:'#e8890c' };
+// B023: graph colours come from the design tokens in :root (CSS), so a theme change restyles the graphs too
+const cssv = (n, d) => (getComputedStyle(document.documentElement).getPropertyValue(n) || '').trim() || d;
+const TEMP_COL = [], DC_COL = [], DATA_COL = {}, UI_COL = {};
+function readTokens(){
+  ['#2563eb','#d64545','#1f9d55','#d98a00','#7c3aed'].forEach((d,i) => TEMP_COL[i] = cssv('--t'+(i+1), d));
+  DC_COL[0] = cssv('--dc1','#0891b2'); DC_COL[1] = cssv('--dc2','#475569');
+  DATA_COL.live = cssv('--live','#1f9d55'); DATA_COL.offline = cssv('--offline','#e8890c');
+  UI_COL.on = cssv('--on','#d64545'); UI_COL.off = cssv('--off','#c9ced8'); UI_COL.text = cssv('--lane-text','#6b7383'); UI_COL.gap = cssv('--gap','rgba(107,115,131,.12)');
+  UI_COL.font = cssv('--font','Inter, Segoe UI, Arial, sans-serif'); UI_COL.ink = cssv('--ink','#1d2330'); UI_COL.mute = cssv('--mute','#6b7383');
+  if (window.Chart){ Chart.defaults.font.family = UI_COL.font; Chart.defaults.color = UI_COL.mute; }
+}
+readTokens();
+window.FZ_retheme = () => { readTokens(); try { drawMain(); } catch(e){} try { drawPanel(); } catch(e){} try { buildPicker(); } catch(e){} };
 const SCN_COL = ['#7c3aed','#0891b2','#d98a00','#1f9d55','#be185d','#2563eb','#65a30d','#475569'];
 const DEFAULT_SEL = { temp1:1,temp2:1,temp3:1,temp4:1,temp5:1, dc1:0,dc2:0,
   di1:1,di2:1,di3:1,di4:1,di5:1, r1:0,r2:0,r3:0,r4:0,r5:0,r6:0,r7:0,r8:0,r9:0, alarms:1, scenario:1, hover:1, sp:1, hys:1, tm:1, dlive:1, doff:1 };
@@ -762,7 +789,7 @@ function buildPicker(){
     keys.forEach(k => SEL[k] = val); saveSel(); buildPicker(); drawMain();
   });
   $('optHover').classList.toggle('on', !!SEL.hover);
-  $('optHover').onclick = () => { SEL.hover = SEL.hover ? 0 : 1; saveSel(); $('optHover').classList.toggle('on', !!SEL.hover); if (!SEL.hover) $('hoverBox').classList.add('hidden'); };
+  $('optHover').onclick = () => { SEL.hover = SEL.hover ? 0 : 1; saveSel(); $('optHover').classList.toggle('on', !!SEL.hover); if (!SEL.hover) $('hoverBox').classList.add('hidden'); if (charts.main) charts.main._pin = null; };
 }
 
 // Data is fetched for a wider span than the window (one window-length each side), so scrolling is instant.
@@ -858,9 +885,9 @@ const lanePlugin = {
     const top0 = a.top - lanes.length*LANE_H - 6;
     const px = t => Math.max(a.left, Math.min(a.right, x.getPixelForValue(t)));
     ctx.save();
-    ctx.font = '11px Inter, Segoe UI, Roboto, Arial, sans-serif'; ctx.textBaseline = 'middle'; ctx.lineCap = 'round';
+    ctx.font = '11px ' + UI_COL.font; ctx.textBaseline = 'middle'; ctx.lineCap = 'round';
     // grey bands where no message was received
-    ctx.fillStyle = 'rgba(107,115,131,.12)';
+    ctx.fillStyle = UI_COL.gap;
     for (const g of gapList()){
       if (g.e < x.min || g.s > x.max) continue;
       const g1 = px(g.s), g2 = px(g.e); if (g2 - g1 < 1) continue;
@@ -869,7 +896,7 @@ const lanePlugin = {
     lanes.forEach((ln, i) => {
       const y = top0 + i*LANE_H + LANE_H/2;
       ln.y = y;
-      ctx.fillStyle = '#6b7383'; ctx.textAlign = 'right'; ctx.fillText(ln.label, a.left - 6, y);
+      ctx.fillStyle = UI_COL.text; ctx.textAlign = 'right'; ctx.fillText(ln.label, a.left - 6, y);
       ctx.strokeStyle = '#eef1f6'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.left, y); ctx.lineTo(a.right, y); ctx.stroke();
       if (ln.k === 'data'){
         const D = G.data || [];
@@ -900,7 +927,7 @@ const lanePlugin = {
         let hit;
         if (ln.k === 'alarms') hit = (r.row.alarms||[]).length > 0;
         else { const v = r.row[ln.k]; if (v === null || v === undefined) continue; hit = !!v; }
-        ctx.strokeStyle = hit ? '#d64545' : '#c9ced8';
+        ctx.strokeStyle = hit ? UI_COL.on : UI_COL.off;
         ctx.lineWidth = hit ? 9 : 2;
         ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
       }
@@ -937,6 +964,7 @@ function drawMain(){
   const lanes = laneList();
   const span = to - from;
   const showV = ds.some(d => d.yAxisID === 'yv');
+  const oldPin = charts.main ? charts.main._pin : null;   // B023: keep pinned details across redraws
   if (charts.main) charts.main.destroy();
   charts.main = new Chart($('cMain'), {
     type:'line', data:{ datasets: ds }, plugins:[lanePlugin],
@@ -947,7 +975,7 @@ function drawMain(){
       scales:{
         x:{ type:'linear', min:from.getTime(), max:to.getTime(),
             ticks:{ maxTicksLimit:9, callback: v => new Date(v).toLocaleString('en-GB', span > 2*86400e3 ? {day:'2-digit',month:'short'} : {hour:'2-digit',minute:'2-digit'}) } },
-        y:{ position:'left', title:{ display:true, text:'°C' }, afterFit: s => { s.width = Math.max(s.width, 64); },
+        y:{ position:'left', title:{ display:true, text:'°C' }, afterFit: s => { s.width = Math.max(s.width, 64, labelW(lanes.map(l => l.label), 11) - 4); },
             ...(ZOOM.y ? { min: ZOOM.y[0], max: ZOOM.y[1] } : {}) },
         yv:{ position:'right', display: showV, title:{ display:true, text:'V' }, grid:{ drawOnChartArea:false },
             ...(ZOOM.yv ? { min: ZOOM.yv[0], max: ZOOM.yv[1] } : {}) },
@@ -957,6 +985,7 @@ function drawMain(){
     }
   });
   hookHover(charts.main);
+  if (oldPin && !SEL.hover){ charts.main._pin = oldPin; charts.main._hoverX = oldPin.x; charts.main.draw(); }
 }
 
 // ----- hover: crosshair + details box -----
@@ -1070,10 +1099,16 @@ function renderScroll(f, t){
   };
 })();
 $('zoomReset').onclick = zoomReset;
+// B023: a click anywhere outside the graph closes pinned details
+document.addEventListener('mousedown', ev => {
+  const c = charts.main; if (!c || !c._pin) return;
+  if (ev.target === c.canvas || $('hoverBox').contains(ev.target)) return;
+  c._pin = null; c._hoverX = null; $('hoverBox').classList.add('hidden'); c.draw();
+});
 
 function hookHover(chart){
   const cv = chart.canvas, box = $('hoverBox');
-  cv.onmouseleave = () => { if (chart._drag) finish(); chart._hoverX = null; box.classList.add('hidden'); chart.draw(); };
+  cv.onmouseleave = () => { if (chart._drag) finish(); if (chart._pin) { chart._hoverX = chart._pin.x; chart.draw(); return; } chart._hoverX = null; box.classList.add('hidden'); chart.draw(); };
   const pos = ev => { const r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
   cv.onmousedown = (ev) => {
     if (ev.button !== 0) return;
@@ -1086,10 +1121,13 @@ function hookHover(chart){
     if (!mode) return;
     ev.preventDefault();
     chart._drag = { mode, x0: mx, y0: my, x1: mx, y1: my, moved: false };
-    box.classList.add('hidden');
+    chart._pin = null; box.classList.add('hidden');
   };
   const finish = () => {
     const d = chart._drag; chart._drag = null;
+    if (d && !d.moved && d.mode === 'rect' && !SEL.hover){       // B023: click = show all details at this point
+      chart._pin = { x: d.x0, y: d.y0 }; chart._hoverX = d.x0; chart.draw(); show(d.x0, d.y0, true); return;
+    }
     if (!d || !d.moved){ chart.draw(); return; }
     const a = chart.chartArea, S = chart.scales;
     const cx = v => Math.max(a.left, Math.min(a.right, v)), cy = v => Math.max(a.top, Math.min(a.bottom, v));
@@ -1114,7 +1152,13 @@ function hookHover(chart){
       if (Math.abs(d.x1-d.x0) > 4 || Math.abs(d.y1-d.y0) > 4) d.moved = true;
       chart.draw(); return;
     }
-    if (mx < a.left || mx > a.right){ cv.onmouseleave(); return; }
+    if (mx < a.left || mx > a.right){ if (!chart._pin) cv.onmouseleave(); return; }
+    if (chart._pin && !SEL.hover) return;          // B023: details pinned by a click stay put
+    show(mx, my, false);
+  };
+  // B023: build and place the details box. full = true shows all details (click with "details on hover" off)
+  const show = (mx, my, full) => {
+    const a = chart.chartArea;
     const t = chart.scales.x.getValueForPixel(mx);
     chart._hoverX = mx; chart.draw();
     const run = runAt(t), b = nearestBucket(t);
@@ -1123,7 +1167,7 @@ function hookHover(chart){
     const lanes = chart._lanes || [];
     const scnLane = lanes.find(l => l.k === 'scenario');
     const onScn = scnLane && Math.abs(my - scnLane.y) <= LANE_H/2;
-    if (SEL.hover){
+    if (SEL.hover || full){
       const r = run ? run.row : null;
       html += `<div class="h">${fmtTs(t)}</div>`;
       const dk = (G.data||[]).find((d, j, D) => t >= d.s && t < ((D[j+1] && D[j+1].s - d.e <= 180e3) ? D[j+1].s : d.e + SAMPLE_S*1000));
@@ -1154,6 +1198,7 @@ function hookHover(chart){
     const w = box.offsetWidth, wrapW = cv.parentElement.clientWidth;
     box.style.left = (mx + 14 + w > wrapW ? mx - w - 14 : mx + 14) + 'px';
     box.style.top = Math.max(0, my - 20) + 'px';
+    box.classList.toggle('pinned', !!full);
   };
 }
 
@@ -1605,7 +1650,7 @@ function renderPred(){
     const c = { ...st.cmd };
     if (['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto') && !c.for) c.for = 300;
     const last = i === plan.length - 1;
-    // B022: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
+    // B023: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
     if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){
       const own = c.for || 300;
       if (own >= st.dur_s){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? endThen : (c.then || 'standby'); }
@@ -1619,7 +1664,7 @@ function renderPred(){
     if (c.c === 'mode' && c.v === 'defrost' && decide().scen === 4){ const te = t + FW_T2*1000; if (!st.dur_s || st.dur_s*1000 > FW_T2*1000){ mark(te); mode = 'auto'; ev.push([te, `<b>Defrost cycle ends</b> → Auto. ${describe()}`]); } }
     t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
   });
-  if (holdEnd) fallback(holdEnd, holdThen);   // B022: at the real end of the Run for time, even if that is before the line ends
+  if (holdEnd) fallback(holdEnd, holdThen);   // B023: at the real end of the Run for time, even if that is before the line ends
   else if (!plan.length) ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (in Auto the machine follows its temperatures).</span>']);
   const horizon = Math.max(now + 30*60e3, (segs.length ? segs[segs.length-1].t1 : now) + 10*60e3, segStart + 10*60e3);
   mark(horizon);
@@ -1653,11 +1698,11 @@ function drawPanel(){
     const { ctx, chartArea:a, scales:{ x } } = ch;
     const px = v => Math.max(a.left, Math.min(a.right, x.getPixelForValue(v)));
     const top0 = a.top - lanes.length*LH - 4;
-    ctx.save(); ctx.font = '10px Inter, Segoe UI, Arial, sans-serif'; ctx.textBaseline = 'middle'; ctx.lineCap = 'butt';
+    ctx.save(); ctx.font = '10px ' + UI_COL.font; ctx.textBaseline = 'middle'; ctx.lineCap = 'butt';
     const hatch = (() => { const c = document.createElement('canvas'); c.width = c.height = 6; const g = c.getContext('2d'); g.strokeStyle = '#b9c1ce'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(0,6); g.lineTo(6,0); g.stroke(); return ctx.createPattern(c, 'repeat'); })();
     lanes.forEach((ln, i) => {
       const y = top0 + i*LH + LH/2;
-      ctx.fillStyle = '#6b7383'; ctx.textAlign = 'right'; ctx.fillText(ln.label.length > 18 ? ln.label.slice(0,17)+'…' : ln.label, a.left - 4, y);
+      ctx.fillStyle = UI_COL.text; ctx.textAlign = 'right'; ctx.fillText(ln.label.length > 18 ? ln.label.slice(0,17)+'…' : ln.label, a.left - 4, y);
       ctx.fillStyle = '#f3f5f8'; ctx.fillRect(a.left, y - LH/2 + 1, a.right - a.left, LH - 2);
       // past
       for (const r of PG.runs){
@@ -1666,7 +1711,7 @@ function drawPanel(){
         if (ln.k === 'mode'){ const m = r.row.rmode; if (!m) continue; ctx.fillStyle = m === 'auto' ? '#c7d7f5' : m === 'standby' ? '#d5d9e0' : '#f6c6a2'; ctx.fillRect(x1, y - 4, Math.max(1, x2-x1), 8);
           if (x2 - x1 > 40){ ctx.fillStyle = '#1d2330'; ctx.textAlign = 'left'; ctx.fillText(m, x1 + 3, y); } continue; }
         const v = r.row[ln.k]; if (v == null) continue;
-        ctx.fillStyle = v ? '#d64545' : '#c9ced8'; ctx.fillRect(x1, y - (v ? 4 : 1), Math.max(1, x2-x1), v ? 8 : 2);
+        ctx.fillStyle = v ? UI_COL.on : UI_COL.off; ctx.fillRect(x1, y - (v ? 4 : 1), Math.max(1, x2-x1), v ? 8 : 2);
       }
       // planned
       if (ln.k.startsWith('di')) return;
@@ -1685,7 +1730,7 @@ function drawPanel(){
         if (idx === 0 && on && sg.r1delay){ const tOn = t0 + sg.r1delay*1000; pieces.push([t0, Math.min(tOn, sg.t1), false]); if (tOn < sg.t1) pieces.push([tOn, sg.t1, true]); }
         else if (idx === 0 && sg.r1until != null){ const tOff = t0 + sg.r1until*1000; pieces.push([t0, Math.min(tOff, sg.t1), true]); if (tOff < sg.t1) pieces.push([tOff, sg.t1, false]); }
         else pieces.push([t0, sg.t1, on]);
-        for (const [a0, a1, v] of pieces){ if (a1 <= a0) continue; const p1 = px(a0), p2 = px(a1); ctx.fillStyle = v ? '#d64545' : '#c9ced8'; ctx.globalAlpha = .75; ctx.fillRect(p1, y - (v ? 4 : 1), Math.max(1, p2 - p1), v ? 8 : 2); ctx.globalAlpha = 1; }
+        for (const [a0, a1, v] of pieces){ if (a1 <= a0) continue; const p1 = px(a0), p2 = px(a1); ctx.fillStyle = v ? UI_COL.on : UI_COL.off; ctx.globalAlpha = .75; ctx.fillRect(p1, y - (v ? 4 : 1), Math.max(1, p2 - p1), v ? 8 : 2); ctx.globalAlpha = 1; }
       }
     });
     // now line
@@ -1700,7 +1745,7 @@ function drawPanel(){
     options:{ responsive:true, maintainAspectRatio:false, animation:false, parsing:false, normalized:true, events:[],
       layout:{ padding:{ top: padTop, left: 6 } },
       scales:{ x:{ type:'linear', min: PG.from, max: horizon, ticks:{ maxTicksLimit:7, callback: v => new Date(v).toLocaleString('en-GB', span > 2*86400e3 ? {day:'2-digit',month:'short'} : {hour:'2-digit',minute:'2-digit'}) } },
-               y:{ title:{ display:true, text:'°C' }, afterFit: sc => { sc.width = Math.max(sc.width, 110); } } },
+               y:{ title:{ display:true, text:'°C' }, afterFit: sc => { sc.width = Math.max(sc.width, 110, labelW(lanes.map(l => l.label.length > 18 ? l.label.slice(0,17)+'…' : l.label), 10) + 2); } } },
       plugins:{ legend:{ display:true, position:'bottom', labels:{ boxWidth:10, font:{ size:10 } } }, tooltip:{ enabled:false } } } });
 }
 
@@ -1820,7 +1865,7 @@ function editMachine(m){
     $('mHist').innerHTML = hist.length ? '<b>IMEI history</b><br>' + hist.map(l => `${esc(l.imei)}: ${fmtT(l.from_ts)} to ${l.to_ts ? fmtT(l.to_ts) : 'now'} <span class="mute">(${esc((l.linked_by||'').split('@')[0])})</span>`).join('<br>') : '<span class="mute">No IMEI linked yet.</span>';
   }
 }
-// ---- B022: serial number inside the controller (firmware P2C9: {"c":"serial","v":"..."}, boot event "sn") ----
+// ---- B023: serial number inside the controller (firmware P2C9: {"c":"serial","v":"..."}, boot event "sn") ----
 const fwNum = fw => { const m = /P2C(\d+)/.exec(fw || ''); return m ? Number(m[1]) : (/^V([3-9]|2\.[1-9])/.test(fw || '') ? 99 : 0); };
 let SN_CTX = null;
 async function loadSnState(serial, imei){
