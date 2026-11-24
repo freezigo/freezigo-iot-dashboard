@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
-    /* ===== DESIGN TOKENS (B027) – change these to restyle the whole dashboard ===== */
+    /* ===== DESIGN TOKENS (B028) – change these to restyle the whole dashboard ===== */
     --font:Inter,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; --fs:14px;
     --bg:#f5f6f8; --card:#fff; --ink:#1d2330; --mute:#6b7383; --line:#e3e6ec;
     --ok:#1f9d55; --bad:#d64545; --acc:#2563eb;
@@ -18,6 +18,8 @@
     --dc1:#0891b2; --dc2:#475569;                                           /* DC1, DC2 lines */
     --live:#1f9d55; --offline:#e8890c;                                      /* Data row dots */
     --on:#d64545; --off:#c9ced8;                                            /* relay / DI on and off */
+    --s-charging:#eab308; --s-cooling:#38bdf8; --s-dcooling:#f97316; --s-issue:#dc2626;   /* scenario colours */
+    --s-defrost:#a855f7; --s-manual:#6366f1; --s-idle:#94a3b8; --boot:#16a34a;          /* boot = power on */
     --lane-text:#6b7383; --gap:rgba(107,115,131,.12);                       /* row labels, no-data bands */
     --tip-bg:rgba(29,35,48,.95); --tip-ink:#fff;                            /* details box */
   }
@@ -359,7 +361,7 @@
         <div id="sbTrack" class="sbtrack" title="Drag the bar to move back or forward in time. Click the track to jump there."><div id="sbThumb" class="sbthumb"></div></div>
         <div class="sblabels"><span id="sbL"></span><span id="sbMid"></span><span id="sbR"></span></div>
       </div>
-      <div class="mute" style="font-size:12px;margin-top:6px">Zoom: mouse wheel over the graph (up = in, down = out, around the pointer), drag a box on the graph, or drag along the time axis (bottom), the °C axis (left) or the V axis (right). Double-click = zoom out one step. Data row: <b style="color:#1f9d55">green</b> = sent live, <b style="color:#e8890c">orange</b> = stored while offline and sent later; each small dot = one message. Other rows: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
+      <div class="mute" style="font-size:12px;margin-top:6px">Zoom: mouse wheel over the graph (up = in, down = out, around the pointer), drag a box on the graph, or drag along the time axis (bottom), the °C axis (left) or the V axis (right). Double-click = zoom out one step. Data row: <b style="color:#1f9d55">green</b> = sent live, <b style="color:#e8890c">orange</b> = stored while offline and sent later; each small dot = one message. Scenario row: <b style="color:#eab308">yellow</b> = charging, <b style="color:#38bdf8">light blue</b> = thermal cooling, <b style="color:#f97316">orange</b> = direct cooling, <b style="color:#dc2626">red</b> = issue, <b style="color:#a855f7">purple</b> = defrost, <b style="color:#6366f1">indigo</b> = manual, <b style="color:#94a3b8">grey</b> = idle; <b style="color:#16a34a">green dot</b> = power on / boot. Other rows: <b style="color:var(--bad)">red</b> = ON (a dot if short, a line if it stays ON). Grey = OFF. Grey shaded band = no message received (unit off, or messages missed).</div>
     </div>
     <div class="grid">
       <div class="card"><h2>Latest values</h2><div class="scroll"><table class="kv" id="setTable"></table></div></div>
@@ -455,7 +457,7 @@
     </div>
   </section>
 
-  <p class="mute" style="text-align:center;font-size:12px">Build B027 · Freezigo IoT Dashboard</p>
+  <p class="mute" style="text-align:center;font-size:12px">Build B028 · Freezigo IoT Dashboard</p>
 </main>
 
 <script>
@@ -472,7 +474,7 @@ window.showErp('')
 // B012: "Update" button. GitHub Pages lets browsers keep the page for up to 10 min, so a new build can look missing.
 // The button asks the server for the newest page (no cache) and reloads with a fresh address if the build is newer.
 (function(){
-  var BUILD = 'B027';
+  var BUILD = 'B028';
   var btn = document.getElementById('updBtn');
   function latest(){
     return fetch(location.pathname + '?nc=' + Date.now(), { cache: 'no-store' })
@@ -560,7 +562,7 @@ const toLocalInput = d => { const x = new Date(d); x.setMinutes(x.getMinutes()-x
 const machineName = r => [r.label, r.serial_no].filter(Boolean).join(' · ');
 
 async function api(op, args = {}){
-  if (window.FZ_DEMO) return window.FZ_DEMO.api(op, args);     // B027: design copy with sample data, no server
+  if (window.FZ_DEMO) return window.FZ_DEMO.api(op, args);     // B028: design copy with sample data, no server
   const { data:{ session } } = await sb.auth.getSession();
   if (!session) throw Object.assign(new Error('Log in first.'), { status:401 });
   const r = await fetch(IOT_API, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token }, body: JSON.stringify({ op, ...args }) });
@@ -657,6 +659,8 @@ async function loadGaps(from, to){
   if (!current) return;
   try {
     const r = await api('gaps', { imei: current.imei, from: new Date(from).toISOString(), to: new Date(to).toISOString() });
+    if (G){ G.boots = r.boots || []; if (charts.main) charts.main.draw(); }   // B028: boots drawn on the scenario row
+    GBOOTS = r.boots || [];
     const items = r.gaps.map(g => ({ s: g.gap_start, e: g.gap_end, len: g.gap_s, cause: g.cause, why: g.boot_reason }));
     // a boot that is not inside any gap (short restart) still gets its own line
     r.boots.forEach(b => { if (!items.some(i => i.cause === 'reboot' && new Date(b.ts) > new Date(i.s) && new Date(b.ts) <= new Date(i.e)))
@@ -756,17 +760,20 @@ function bucketFor(from, to, maxPts = 500){
   return steps.find(s => secs/s <= maxPts) || 86400;
 }
 // ===== One combined graph (B004) =====
-// B027: width in px of the longest row label, so long names (e.g. "DI3 Voltage OK") are never cut off
+// B028: width in px of the longest row label, so long names (e.g. "DI3 Voltage OK") are never cut off
 const labelW = (labels, px) => { const c = labelW.c || (labelW.c = document.createElement('canvas').getContext('2d')); c.font = px + 'px ' + UI_COL.font; return Math.ceil(Math.max(0, ...labels.map(t => c.measureText(String(t)).width))); };
 const LANE_H = 16;                          // height of one on/off row at the top
 const SAMPLE_S = 30;                        // a single sample is drawn as 30 s long
-// B027: graph colours come from the design tokens in :root (CSS), so a theme change restyles the graphs too
+// B028: graph colours come from the design tokens in :root (CSS), so a theme change restyles the graphs too
 const cssv = (n, d) => (getComputedStyle(document.documentElement).getPropertyValue(n) || '').trim() || d;
-const TEMP_COL = [], DC_COL = [], DATA_COL = {}, UI_COL = {};
+const TEMP_COL = [], DC_COL = [], DATA_COL = {}, UI_COL = {}, SCN_FIX = {};
 function readTokens(){
   ['#2563eb','#d64545','#1f9d55','#d98a00','#7c3aed'].forEach((d,i) => TEMP_COL[i] = cssv('--t'+(i+1), d));
   DC_COL[0] = cssv('--dc1','#0891b2'); DC_COL[1] = cssv('--dc2','#475569');
   DATA_COL.live = cssv('--live','#1f9d55'); DATA_COL.offline = cssv('--offline','#e8890c');
+  SCN_FIX.CHARGING = cssv('--s-charging','#eab308'); SCN_FIX.COOLING = SCN_FIX.THERMAL_COOLING = cssv('--s-cooling','#38bdf8');
+  SCN_FIX.D_COOLING = cssv('--s-dcooling','#f97316'); SCN_FIX.ISSUE = cssv('--s-issue','#dc2626'); SCN_FIX.DEFROST = cssv('--s-defrost','#a855f7');
+  SCN_FIX.MANUAL = cssv('--s-manual','#6366f1'); SCN_FIX.IDLE = SCN_FIX.STANDBY = cssv('--s-idle','#94a3b8'); UI_COL.boot = cssv('--boot','#16a34a');
   UI_COL.on = cssv('--on','#d64545'); UI_COL.off = cssv('--off','#c9ced8'); UI_COL.text = cssv('--lane-text','#6b7383'); UI_COL.gap = cssv('--gap','rgba(107,115,131,.12)');
   UI_COL.soft = cssv('--soft','#eef1f6'); UI_COL.line = cssv('--line','#e3e6ec'); UI_COL.font = cssv('--font','Inter, Segoe UI, Arial, sans-serif'); UI_COL.ink = cssv('--ink','#1d2330'); UI_COL.mute = cssv('--mute','#6b7383');
   if (window.Chart){ Chart.defaults.font.family = UI_COL.font; Chart.defaults.color = UI_COL.mute; Chart.defaults.borderColor = UI_COL.line; }
@@ -809,6 +816,7 @@ function buildPicker(){
 }
 
 // Data is fetched for a wider span than the window (one window-length each side), so scrolling is instant.
+let GBOOTS = [];
 let LOADSEQ = 0, DRAG_VIEW = null, WHEEL = { t: null };
 async function loadDetail(from, to){
   loadGaps(from, to);   // B014
@@ -826,7 +834,7 @@ async function loadDetail(from, to){
   if (seq !== LOADSEQ) return;                         // a newer request has started
   const [s, st, e, dr] = res;
   const view = DRAG_VIEW || { from, to };              // while dragging, keep where the bar is now
-  G = { from: view.from, to: view.to, dfrom, dto, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows,
+  G = { boots: GBOOTS, from: view.from, to: view.to, dfrom, dto, bucket, series: s.rows, runs: toRuns(st.rows), events: e.rows,
         data: dr.rows.map(r => ({ s: new Date(r.s).getTime(), e: new Date(r.e).getTime(), source: r.source, n: r.n, pts: (r.pts||[]).map(v => v*1000) })) };
   buildPicker();
   drawMain();
@@ -890,7 +898,7 @@ function laneList(){
   }
   return L;
 }
-const scnColour = name => { let h = 0; for (const c of String(name)) h = (h*31 + c.charCodeAt(0)) >>> 0; return SCN_COL[h % SCN_COL.length]; };
+const scnColour = name => { const f = SCN_FIX[String(name||'').toUpperCase()]; if (f) return f; let h = 0; for (const c of String(name)) h = (h*31 + c.charCodeAt(0)) >>> 0; return SCN_COL[h % SCN_COL.length]; };
 
 const lanePlugin = {
   id: 'lanes',
@@ -934,9 +942,12 @@ const lanePlugin = {
         if (r.e < x.min || r.s > x.max) continue;
         const x1 = px(r.s), x2 = Math.max(px(r.e) - 1, x1);
         if (ln.k === 'scenario'){
+          const col = scnColour(r.row.scenario);
+          ctx.strokeStyle = col; ctx.lineWidth = 4; ctx.globalAlpha = .55;      // B028: thin band in the scenario colour
+          ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke(); ctx.globalAlpha = 1;
           const prev = G.runs[G.runs.indexOf(r)-1];
           if (!prev || prev.row.scenario !== r.row.scenario){
-            ctx.fillStyle = scnColour(r.row.scenario); ctx.beginPath(); ctx.arc(x1, y, 5, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x1, y, 5, 0, Math.PI*2); ctx.fill();
           }
           continue;
         }
@@ -946,6 +957,11 @@ const lanePlugin = {
         ctx.strokeStyle = hit ? UI_COL.on : UI_COL.off;
         ctx.lineWidth = hit ? 9 : 2;
         ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+      }
+      if (ln.k === 'scenario') for (const b of (G.boots || [])){        // B028: power on / boot = green dot with white ring
+        const t = new Date(b.ts).getTime(); if (t < x.min || t > x.max) continue;
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px(t), y, 7, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = UI_COL.boot; ctx.beginPath(); ctx.arc(px(t), y, 5.5, 0, Math.PI*2); ctx.fill();
       }
     });
     chart._lanes = lanes;
@@ -980,7 +996,7 @@ function drawMain(){
   const lanes = laneList();
   const span = to - from;
   const showV = ds.some(d => d.yAxisID === 'yv');
-  const oldPin = charts.main ? charts.main._pin : null;   // B027: keep pinned details across redraws
+  const oldPin = charts.main ? charts.main._pin : null;   // B028: keep pinned details across redraws
   if (charts.main) charts.main.destroy();
   charts.main = new Chart($('cMain'), {
     type:'line', data:{ datasets: ds }, plugins:[lanePlugin],
@@ -1022,7 +1038,7 @@ function renderStats(){
     const nx = D[j+1];
     const end = (nx && nx.s - d.e <= 180e3) ? nx.s : d.e + SAMPLE_S*1000;
     const len = Math.max(0, Math.min(end, w1) - Math.max(d.s, w0));
-    // B027: count only the messages whose time is inside the window (runs can reach outside it, since data is loaded with a margin for scrolling)
+    // B028: count only the messages whose time is inside the window (runs can reach outside it, since data is loaded with a margin for scrolling)
     const k = d.pts && d.pts.length ? d.pts.filter(t => t >= w0 && t <= w1).length : (len > 0 ? d.n : 0);
     if (d.source === 'offline'){ off += len; nOff += k; } else { on += len; nOn += k; }
   });
@@ -1117,7 +1133,7 @@ function renderScroll(f, t){
   };
 })();
 $('zoomReset').onclick = zoomReset;
-// B027: a click anywhere outside the graph closes pinned details
+// B028: a click anywhere outside the graph closes pinned details
 document.addEventListener('mousedown', ev => {
   const c = charts.main; if (!c || !c._pin) return;
   if (ev.target === c.canvas || $('hoverBox').contains(ev.target)) return;
@@ -1128,7 +1144,7 @@ function hookHover(chart){
   const cv = chart.canvas, box = $('hoverBox');
   cv.onmouseleave = () => { if (chart._drag) finish(); if (chart._pin) { chart._hoverX = chart._pin.x; chart.draw(); return; } chart._hoverX = null; box.classList.add('hidden'); chart.draw(); };
   const pos = ev => { const r = cv.getBoundingClientRect(); return [ev.clientX - r.left, ev.clientY - r.top]; };
-  // B027: mouse wheel over the graph zooms the time axis around the pointer (wheel up = in, down = out)
+  // B028: mouse wheel over the graph zooms the time axis around the pointer (wheel up = in, down = out)
   cv.onwheel = (ev) => {
     if (!G || !chart.chartArea) return;
     const [mx] = pos(ev), a = chart.chartArea;
@@ -1167,7 +1183,7 @@ function hookHover(chart){
   };
   const finish = () => {
     const d = chart._drag; chart._drag = null;
-    if (d && !d.moved && d.mode === 'rect' && !SEL.hover){       // B027: click = show all details at this point
+    if (d && !d.moved && d.mode === 'rect' && !SEL.hover){       // B028: click = show all details at this point
       chart._pin = { x: d.x0, y: d.y0 }; chart._hoverX = d.x0; chart.draw(); show(d.x0, d.y0, true); return;
     }
     if (!d || !d.moved){ chart.draw(); return; }
@@ -1195,10 +1211,10 @@ function hookHover(chart){
       chart.draw(); return;
     }
     if (mx < a.left || mx > a.right){ if (!chart._pin) cv.onmouseleave(); return; }
-    if (chart._pin && !SEL.hover) return;          // B027: details pinned by a click stay put
+    if (chart._pin && !SEL.hover) return;          // B028: details pinned by a click stay put
     show(mx, my, false);
   };
-  // B027: build and place the details box. full = true shows all details (click with "details on hover" off)
+  // B028: build and place the details box. full = true shows all details (click with "details on hover" off)
   const show = (mx, my, full) => {
     const a = chart.chartArea;
     const t = chart.scales.x.getValueForPixel(mx);
@@ -1233,7 +1249,12 @@ function hookHover(chart){
         html += `<div class="boxes">${[1,2,3,4,5,6,7,8,9].map(n=>`<span class="bx ${r&&r['r'+n]?'on':''}">R${n}</span>`).join('')}</div>`;
       }
     } else if (onScn && run){
-      html = `<div class="h">${esc(run.row.scenario)}</div><div>${fmtTs(run.s)}</div>`;
+      html = `<div class="h"><span class="sw" style="background:${scnColour(run.row.scenario)}"></span> ${esc(run.row.scenario)}</div><div>${fmtTs(run.s)}</div>`;
+    }
+    if (onScn){                                         // B028: boot (power on) under the pointer
+      const tol = 8 * (chart.scales.x.max - chart.scales.x.min) / (a.right - a.left);
+      const bt = (G.boots || []).find(b => Math.abs(new Date(b.ts).getTime() - t) <= tol);
+      if (bt) html = `<div class="h"><span class="sw" style="background:${UI_COL.boot}"></span> Power on / boot</div><div>${fmtTs(bt.ts)}</div><div>${esc(rstText(bt.reset_reason))}${bt.fw ? ' · firmware ' + esc(bt.fw) : ''}${bt.serial_no ? ' · ' + esc(bt.serial_no) : ''}</div>` + (SEL.hover || full ? '<hr style="border:0;border-top:1px solid rgba(255,255,255,.2)">' + html : '');
     }
     if (!html){ box.classList.add('hidden'); return; }
     box.innerHTML = html; box.classList.remove('hidden');
@@ -1693,7 +1714,7 @@ function renderPred(){
     const c = { ...st.cmd };
     if (['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto') && !c.for) c.for = 300;
     const last = i === plan.length - 1;
-    // B027: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
+    // B028: same rule as the server (program_tick): the step's own Run for is kept when it is shorter than the wait to the next step
     if (st.dur_s > 0 && ['mode','relay','ovr','status'].includes(c.c) && !(c.c==='mode' && c.v==='auto')){
       const own = c.for || 300;
       if (own >= st.dur_s){ c.for = last ? st.dur_s : st.dur_s + 300; c.then = last ? endThen : (c.then || 'standby'); }
@@ -1707,7 +1728,7 @@ function renderPred(){
     if (c.c === 'mode' && c.v === 'defrost' && decide().scen === 4){ const te = t + FW_T2*1000; if (!st.dur_s || st.dur_s*1000 > FW_T2*1000){ mark(te); mode = 'auto'; ev.push([te, `<b>Defrost cycle ends</b> → Auto. ${describe()}`]); } }
     t += (st.dur_s || 0) * 1000 + (st.dur_s ? 0 : 5000);
   });
-  if (holdEnd) fallback(holdEnd, holdThen);   // B027: at the real end of the Run for time, even if that is before the line ends
+  if (holdEnd) fallback(holdEnd, holdThen);   // B028: at the real end of the Run for time, even if that is before the line ends
   else if (!plan.length) ev.push([now, '<span class="mute">No timer running. Nothing changes until a new command (in Auto the machine follows its temperatures).</span>']);
   const horizon = Math.max(now + 30*60e3, (segs.length ? segs[segs.length-1].t1 : now) + 10*60e3, segStart + 10*60e3);
   mark(horizon);
@@ -1831,7 +1852,7 @@ function applyAck(a){
   s.at = Date.now();
   renderLive();
 }
-// ---- B027: event log upload ({"c":"log"}, firmware P2C16) ----
+// ---- B028: event log upload ({"c":"log"}, firmware P2C16) ----
 let LOG_RUN = 0;
 const logMsg = (cls, html) => { const e = $('ctlLogMsg'); e.className = cls; e.innerHTML = html; };
 function showLog(l){
@@ -1958,7 +1979,7 @@ function editMachine(m){
     $('mHist').innerHTML = hist.length ? '<b>IMEI history</b><br>' + hist.map(l => `${esc(l.imei)}: ${fmtT(l.from_ts)} to ${l.to_ts ? fmtT(l.to_ts) : 'now'} <span class="mute">(${esc((l.linked_by||'').split('@')[0])})</span>`).join('<br>') : '<span class="mute">No IMEI linked yet.</span>';
   }
 }
-// ---- B027: serial number inside the controller (firmware P2C9: {"c":"serial","v":"..."}, boot event "sn") ----
+// ---- B028: serial number inside the controller (firmware P2C9: {"c":"serial","v":"..."}, boot event "sn") ----
 const fwNum = fw => { const m = /P2C(\d+)/.exec(fw || ''); return m ? Number(m[1]) : (/^V([3-9]|2\.[1-9])/.test(fw || '') ? 99 : 0); };
 let SN_CTX = null;
 async function loadSnState(serial, imei){
